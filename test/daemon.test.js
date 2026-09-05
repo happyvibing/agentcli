@@ -69,7 +69,7 @@ test("server tools lists via daemon", () => {
   const r = cli(["server", "tools", "demo"]);
   assert.equal(r.status, 0, r.stderr);
   const out = JSON.parse(r.stdout);
-  assert.ok(out.data.length === 4);
+  assert.ok(out.data.length === 5);
 });
 
 test("tool errors keep their exit codes through the daemon", () => {

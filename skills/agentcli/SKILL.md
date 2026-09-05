@@ -54,6 +54,9 @@ Flags override `--input` keys, so combining them is safe.
 - Arrays: repeat the flag — `--tag a --tag b`.
 - Booleans: presence means true (`--dry-run`), or explicit `--dry-run=false` / `--dry-run false`.
 - Numbers are validated; enums reject invalid choices with exit code 2 and list allowed values.
+- Some tools document allowed values in their description text instead of a real enum
+  (`Available values: ...`). Those are NOT validated client-side — read the description
+  carefully and copy the literal value (e.g. `oneMonth`, not "one month").
 
 ## Exit codes
 

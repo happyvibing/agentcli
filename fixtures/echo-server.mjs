@@ -16,6 +16,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           message: { type: "string", description: "Message to echo" },
           times: { type: "integer", default: 1, description: "Repeat count" },
           upper: { type: "boolean", description: "Uppercase the message" },
+          mode: { type: "string", enum: ["plain", "shout"], description: "Echo mode" },
         },
         required: ["message"],
       },
@@ -42,6 +43,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       description: "Sleeps before responding",
       inputSchema: { type: "object", properties: { ms: { type: "integer" } } },
     },
+    {
+      name: "double",
+      description: "Returns a doubly-encoded JSON payload (as many HTTP servers do)",
+      inputSchema: { type: "object", properties: { n: { type: "integer" } } },
+    },
   ],
 }));
 
@@ -51,6 +57,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     case "echo": {
       let m = a.message;
       if (a.upper) m = m.toUpperCase();
+      if (a.mode === "shout") m = m.toUpperCase() + "!!!";
       const times = Math.max(1, a.times ?? 1);
       return { content: [{ type: "text", text: Array(times).fill(m).join(" ") }] };
     }
@@ -61,6 +68,10 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     case "slow":
       await new Promise((r) => setTimeout(r, a.ms ?? 1000));
       return { content: [{ type: "text", text: "done" }] };
+    case "double": {
+      const payload = [{ id: a.n ?? 1 }, { id: (a.n ?? 1) + 1 }];
+      return { content: [{ type: "text", text: JSON.stringify(JSON.stringify(payload)) }] };
+    }
     default:
       return { isError: true, content: [{ type: "text", text: "unknown tool: " + req.params.name }] };
   }

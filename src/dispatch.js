@@ -17,21 +17,31 @@ function extractText(result) {
     .join("\n");
 }
 
+// Some servers return JSON.stringify(JSON.stringify(payload)) — text content that
+// is still a JSON string after one parse. Unwrap while it stays a string (bounded).
+function parseMaybeEncoded(text, maxDepth = 3) {
+  let v = text;
+  for (let i = 0; typeof v === "string" && i <= maxDepth; i++) {
+    try {
+      v = JSON.parse(v);
+    } catch {
+      break;
+    }
+  }
+  return v;
+}
+
 // Result -> data:
 //   structuredContent if the server sent one;
-//   else if all items are text: parsed JSON when it parses, joined text otherwise;
+//   else if all items are text: parsed JSON (double-encoded strings unwrapped),
+//   joined text when it is not JSON;
 //   else pass the content items through.
 function extractData(result) {
   if (result.structuredContent !== undefined) return result.structuredContent;
   const items = result.content || [];
   if (items.length === 0) return null;
   if (items.every((c) => c && c.type === "text")) {
-    const text = items.map((c) => c.text).join("\n");
-    try {
-      return JSON.parse(text);
-    } catch {
-      return text;
-    }
+    return parseMaybeEncoded(items.map((c) => c.text).join("\n"));
   }
   return { content: items };
 }
@@ -48,7 +58,9 @@ async function printServerHelp(cfg, serverName, refresh) {
   const { tools } = await listTools(cfg, serverName, { refresh });
   const lines = [serverName + " — MCP server (" + tools.length + " tools)", "", "Usage:", "  agentcli " + serverName + " <tool> [flags]", "", "Tools:"];
   for (const t of tools) {
-    lines.push("  " + String(t.name).padEnd(28) + firstLine(t.description));
+    const name = String(t.name);
+    const pad = name.length >= 28 ? "  " : " ".repeat(28 - name.length);
+    lines.push("  " + name + pad + firstLine(t.description));
   }
   lines.push("", "  agentcli " + serverName + " <tool> --help    Help for a specific tool");
   console.log(lines.join("\n"));
@@ -113,7 +125,15 @@ export async function runServerCommand(cfg, serverName, tail) {
   // 5. observe
   if (output === "text") {
     const text = extractText(result);
-    process.stdout.write((text !== "" ? text : JSON.stringify(extractData(result))) + "\n");
+    if (text === "") {
+      // Non-text content items: fall back to the machine-readable form.
+      process.stdout.write(JSON.stringify(extractData(result)) + "\n");
+    } else {
+      // Double-encoded JSON pretty-prints; genuine prose passes through raw.
+      const v = parseMaybeEncoded(text);
+      const out = v !== null && typeof v === "object" ? JSON.stringify(v, null, 2) : text;
+      process.stdout.write(out + "\n");
+    }
     return EXIT.OK;
   }
   printJson({

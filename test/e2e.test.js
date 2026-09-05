@@ -52,7 +52,7 @@ test("server tools lists tools (json default)", () => {
   const r = cli(["server", "tools", "demo"]);
   assert.equal(r.status, 0, r.stderr);
   const names = JSON.parse(r.stdout).data.map((t) => t.name).sort();
-  assert.deepEqual(names, ["complex", "echo", "fail", "slow"]);
+  assert.deepEqual(names, ["complex", "double", "echo", "fail", "slow"]);
 });
 
 test("tool call with flags", () => {
@@ -90,6 +90,20 @@ test("positional argument -> exit 2", () => {
   const r = cli(["demo", "echo", "positional"]);
   assert.equal(r.status, 2);
   assert.equal(JSON.parse(r.stderr).error.code, "INVALID_ARGUMENT");
+});
+
+test("enum rejects invalid choice -> exit 2 with allowed values", () => {
+  const r = cli(["demo", "echo", "--message", "hi", "--mode", "loud"]);
+  assert.equal(r.status, 2);
+  const err = JSON.parse(r.stderr);
+  assert.equal(err.error.code, "INVALID_ARGUMENT");
+  assert.match(err.error.hint, /Allowed values: plain, shout/);
+});
+
+test("enum accepts a valid choice", () => {
+  const r = cli(["demo", "echo", "--message", "hi", "--mode", "shout"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).data, "HI!!!");
 });
 
 test("unknown tool -> exit 12 NOT_FOUND", () => {
@@ -201,7 +215,7 @@ test("tools cache file is written and reused", () => {
   const cache = path.join(tmp, "cache", "demo.tools.json");
   assert.ok(fs.existsSync(cache));
   const c = JSON.parse(fs.readFileSync(cache, "utf8"));
-  assert.ok(Array.isArray(c.tools) && c.tools.length === 4);
+  assert.ok(Array.isArray(c.tools) && c.tools.length === 5);
 });
 
 test("reserved names are rejected", () => {
@@ -216,6 +230,25 @@ test("duplicate server is rejected", () => {
   assert.match(r.stderr, /already exists/);
 });
 
+test("double-encoded text content is unwrapped into data (json mode)", () => {
+  const r = cli(["demo", "double", "--n", "7"]);
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.deepEqual(out.data, [{ id: 7 }, { id: 8 }]);
+});
+
+test("double-encoded text content pretty-prints in --output text (jq-ready)", () => {
+  const r = cli(["demo", "double", "--n", "7", "--output", "text"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(r.stdout), [{ id: 7 }, { id: 8 }]);
+  assert.match(r.stdout, /\n\s+"id"/);
+});
+
+test("prose text passes through raw in --output text", () => {
+  const r = cli(["demo", "echo", "--message", "hi", "--output", "text"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), "hi");
+});
 test("server remove", () => {
   const r = cli(["server", "remove", "demo"]);
   assert.equal(r.status, 0, r.stderr);
