@@ -1,0 +1,36 @@
+{
+  "name": "agentcli",
+  "version": "0.1.0",
+  "description": "A simple Node.js CLI with multiple subcommands, built with commander.",
+  "type": "module",
+  "bin": {
+    "agentcli": "bin/agentcli.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "keywords": [
+    "cli",
+    "commander",
+    "agentcli",
+    "demo"
+  ],
+  "license": "MIT",
+  "author": "",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node bin/agentcli.js",
+    "prepublishOnly": "pnpm test",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "commander": "^12.1.0"
+  }
+}
