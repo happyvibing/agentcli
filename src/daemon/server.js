@@ -4,7 +4,7 @@ import net from "node:net";
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
-import { createTransport, sdk, ttlFromEnv } from "../client.js";
+import { createTransport, mapError, sdk, ttlFromEnv } from "../client.js";
 import { loadConfig } from "../config.js";
 import { errors, serializeError } from "../errors.js";
 import { socketPath, pidPath, logPath, ensureDaemonDir } from "./paths.js";
@@ -53,10 +53,15 @@ class DaemonState {
         // ignore
       }
     }
-    const transport = await createTransport(spec);
-    const { Client } = await sdk();
-    const client = new Client(CLIENT_INFO);
-    await client.connect(transport);
+    let transport, Client, client;
+    try {
+      transport = await createTransport(spec);
+      ({ Client } = await sdk());
+      client = new Client(CLIENT_INFO);
+      await client.connect(transport);
+    } catch (e) {
+      throw mapError(e, serverName);
+    }
     this.clients.set(serverName, { client, specJson });
     return client;
   }
@@ -72,7 +77,12 @@ class DaemonState {
       return { tools: cached.tools, cached: true };
     }
     const client = await this.getClient(server, spec);
-    const res = await client.listTools(undefined, { timeout: 30000 });
+    let res;
+    try {
+      res = await client.listTools(undefined, { timeout: 30000 });
+    } catch (e) {
+      throw mapError(e, server);
+    }
     const tools = res.tools || [];
     this.tools.set(server, { tools, fetchedAt: Date.now() });
     return { tools, cached: false };
@@ -86,7 +96,11 @@ class DaemonState {
     }
     const client = await this.getClient(server, spec);
     this.stats.toolCalls++;
-    return client.callTool({ name: tool, arguments: args || {} }, undefined, { timeout: timeoutMs ?? 60000 });
+    try {
+      return await client.callTool({ name: tool, arguments: args || {} }, undefined, { timeout: timeoutMs ?? 60000 });
+    } catch (e) {
+      throw mapError(e, server);
+    }
   }
 
   status() {

@@ -102,7 +102,7 @@ export async function createTransport(spec) {
   });
 }
 
-function mapError(e, serverName, stderrTail) {
+export function mapError(e, serverName, stderrTail) {
   const msg = String((e && e.message) || e);
   if (/timed?\s*out/i.test(msg)) return errors.timeout(serverName + ": " + msg);
   const status = e && (e.status ?? e.code);
