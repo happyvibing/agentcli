@@ -106,6 +106,32 @@ test("unknown server -> exit 12 NOT_FOUND", () => {
   assert.equal(JSON.parse(r.stderr).error.code, "NOT_FOUND");
 });
 
+test("typo in server name suggests the closest configured server", () => {
+  const r = cli(["demoa", "whatever"]);
+  assert.equal(r.status, 12);
+  const err = JSON.parse(r.stderr);
+  assert.match(err.error.hint, /Did you mean: demo/);
+});
+
+test("top-level --help lists configured servers; empty config shows onboarding", () => {
+  const r = cli(["--help"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /Configured servers/);
+  assert.match(r.stdout, /demo/);
+
+  const emptyConfig = path.join(tmp, "empty.json");
+  const empty = cli(["--help"], { AGENTCLI_CONFIG: emptyConfig });
+  assert.equal(empty.status, 0, empty.stderr);
+  assert.match(empty.stdout, /No servers configured yet/);
+  assert.match(empty.stdout, /server add/);
+});
+
+test("server -h lists configured servers", () => {
+  const r = cli(["server", "-h"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /Configured servers: demo/);
+});
+
 test("object parameter cannot be a flag; --input works and flags merge", () => {
   const bad = cli(["demo", "complex", "--spec", "x"]);
   assert.equal(bad.status, 2);

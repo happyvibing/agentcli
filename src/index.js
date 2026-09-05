@@ -9,6 +9,10 @@ import { startDaemon, stopDaemon, daemonStatus } from "./daemon/lifecycle.js";
 
 const { version } = pkg;
 
+// Built-in top-level commands (everything else that matches a configured
+// server name is dispatched dynamically).
+const KNOWN_BUILTINS = new Set(["server", "daemon", "help"]);
+
 function exitWithError(e) {
   if (e instanceof AgentCliError) {
     printError(e);
@@ -39,7 +43,7 @@ function parseKeyValueList(list, flagName, expected) {
   const out = {};
   for (const kv of list || []) {
     const idx = kv.indexOf("=");
-    if (idx <= 0) throw errors.invalidArgument('invalid --' + flagName + ' "' + kv + '"', 'Expected ' + expected);
+    if (idx <= 0) throw errors.invalidArgument("invalid --" + flagName + ' "' + kv + '"', "Expected " + expected);
     out[kv.slice(0, idx)] = kv.slice(idx + 1);
   }
   return out;
@@ -64,24 +68,69 @@ function stripGlobalFlags(argv) {
   return { rest, configPath };
 }
 
+// The dynamic `agentcli <server> <tool>` surface is invisible to commander's
+// generated help, so surface configured servers explicitly -- top-level help is
+// the discovery entry point for agents and humans alike.
+function serversHelpSection(cfg) {
+  const entries = Object.entries(cfg.servers);
+  if (entries.length === 0) {
+    return [
+      "",
+      "No servers configured yet:",
+      "  agentcli server add <name> -- <command...> [args...]   # stdio server",
+      "  agentcli server add <name> --url <http-url>            # Streamable HTTP server",
+      "",
+    ].join("\n");
+  }
+  const lines = entries.map(([name, spec]) => {
+    const detail = spec.type === "http" ? spec.url : [spec.command, ...(spec.args || [])].join(" ");
+    return "  " + name.padEnd(16) + (spec.type === "http" ? "http - " : "stdio - ") + detail;
+  });
+  return [
+    "",
+    "Configured servers (agentcli <server> <tool> ...):",
+    ...lines,
+    "  agentcli <server> --help    List a server\u0027s tools",
+    "",
+  ].join("\n");
+}
+// Tiny edit-distance for "did you mean" suggestions (typo-tolerant, no deps).
+function levenshtein(a, b) {
+  const m = a.length;
+  const n = b.length;
+  if (Math.abs(m - n) > 3) return Infinity;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    const curr = [i];
+    for (let j = 1; j <= n; j++) {
+      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = curr;
+  }
+  return prev[n];
+}
+
+function fuzzyMatch(typed, candidate) {
+  if (candidate.includes(typed)) return true;
+  return levenshtein(typed, candidate) <= Math.max(1, Math.floor(candidate.length / 3));
+}
+
 function buildBuiltins(cfg) {
   const program = new Command();
   program
     .name("agentcli")
     .version(version)
-    .description(
-      "AgentCLI — call MCP servers from the command line.\n\n" +
-        (Object.keys(cfg.servers).length ? "Configured servers: " + Object.keys(cfg.servers).join(", ") + "\n\n" : "") +
-        "Get started:\n" +
-        "  agentcli server add <name> -- <command...> [args...]\n" +
-        "  agentcli server add <name> --url <http-url>\n" +
-        "  agentcli <name> --help          List a server's tools\n" +
-        "  agentcli <name> <tool> --help   Help for one tool"
-    )
+    .description("AgentCLI -- call MCP servers from the command line.")
     .exitOverride()
     .configureOutput({ writeErr: () => {} });
 
+  program.addHelpText("after", serversHelpSection(cfg));
+
   const server = program.command("server").description("Manage configured MCP servers.");
+  server.addHelpText(
+    "after",
+    "\nConfigured servers: " + (Object.keys(cfg.servers).join(", ") || "none") + "\n  agentcli server list    Details as JSON\n"
+  );
 
   server
     .command("add <name>")
@@ -99,7 +148,7 @@ function buildBuiltins(cfg) {
         if (!cmd || cmd.length === 0) {
           throw errors.usage(
             "a stdio server needs a command",
-            'agentcli server add <name> -- <command...> [args...]   |   agentcli server add <name> --url <http-url>'
+            "agentcli server add <name> -- <command...> [args...]   |   agentcli server add <name> --url <http-url>"
           );
         }
         const [command, ...args] = cmd;
@@ -150,6 +199,7 @@ function buildBuiltins(cfg) {
         data: tools.map((t) => ({ name: t.name, description: t.description || "" })),
       });
     });
+
   const daemon = program
     .command("daemon")
     .description("Manage the background daemon (persistent MCP connections, fast repeated calls).")
@@ -204,7 +254,24 @@ export async function run(argv) {
       return;
     }
 
-    // Built-ins: `agentcli server ...`, `agentcli --help`, ...
+    // Unknown top-level command that is not a configured server: richer error
+    // than commander's generic one -- suggest configured servers so agents can
+    // self-correct without another roundtrip.
+    if (first && !first.startsWith("-") && !cfg.servers[first] && !KNOWN_BUILTINS.has(first)) {
+      const names = Object.keys(cfg.servers);
+      const lower = first.toLowerCase();
+      const near = names.filter((n) => fuzzyMatch(lower, n.toLowerCase()));
+      const hints = [];
+      if (near.length) hints.push("Did you mean: " + near.join(", ") + "?");
+      hints.push(
+        names.length
+          ? "Configured servers: " + names.join(", ")
+          : "No servers configured -- agentcli server add <name> -- <command...>"
+      );
+      throw errors.notFound('unknown command "' + first + '"', hints.join(" | "));
+    }
+
+    // Built-ins: `agentcli server ...`, `agentcli daemon ...`, `agentcli --help`, ...
     const program = buildBuiltins(cfg);
     await program.parseAsync(rest, { from: "user" });
   } catch (e) {
