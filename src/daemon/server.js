@@ -4,9 +4,8 @@ import net from "node:net";
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { createTransport, sdk, ttlFromEnv } from "../client.js";
 import { loadConfig } from "../config.js";
-import { createTransport, ttlFromEnv } from "../client.js";
 import { errors, serializeError } from "../errors.js";
 import { socketPath, pidPath, logPath, ensureDaemonDir } from "./paths.js";
 
@@ -54,7 +53,8 @@ class DaemonState {
         // ignore
       }
     }
-    const transport = createTransport(spec);
+    const transport = await createTransport(spec);
+    const { Client } = await sdk();
     const client = new Client(CLIENT_INFO);
     await client.connect(transport);
     this.clients.set(serverName, { client, specJson });
@@ -211,6 +211,11 @@ export async function runDaemon() {
     server.once("error", reject);
     server.listen(socketPath(), resolve);
   });
+  try {
+    fs.chmodSync(socketPath(), 0o600); // only the owner may talk to the daemon
+  } catch {
+    // some filesystems ignore socket chmods; the config dir is user-scoped anyway
+  }
   state.server = server;
 
   fs.writeFileSync(pidPath(), String(process.pid) + "\n");

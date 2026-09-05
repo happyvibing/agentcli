@@ -49,6 +49,7 @@ agentcli github search_issue --repo apache/hertzbeat --query "memory leak" --out
 
 | Command | Purpose |
 |---|---|
+| `agentcli --help` | Overview: built-ins **and configured servers** (discovery entry point) |
 | `agentcli server add <name> -- <command...>` | Register a stdio server |
 | `agentcli server add <name> --url <url>` | Register a Streamable HTTP server (`--header` repeatable) |
 | `agentcli server list` | Configured servers (JSON by default, `-o text` for humans) |
@@ -58,6 +59,10 @@ agentcli github search_issue --repo apache/hertzbeat --query "memory leak" --out
 | `agentcli <server> <tool> --help` | Generated usage for one tool |
 | `agentcli <server> <tool> --schema` | Raw JSON Schema of the tool input |
 | `agentcli <server> <tool> [flags]` | Execute |
+| `agentcli daemon start/stop/status/restart` | Manage the background daemon |
+
+Unknown server names get typo-tolerant suggestions (`Did you mean: everything?`), so a
+mistyped first word self-corrects without another discovery roundtrip.
 
 ### Flags
 

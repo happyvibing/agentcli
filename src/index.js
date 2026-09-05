@@ -6,12 +6,13 @@ import { printError, printJson } from "./jsonout.js";
 import { runServerCommand } from "./dispatch.js";
 import { listTools } from "./client.js";
 import { startDaemon, stopDaemon, daemonStatus } from "./daemon/lifecycle.js";
+import { suggest } from "./fuzzy.js";
 
 const { version } = pkg;
 
 // Built-in top-level commands (everything else that matches a configured
 // server name is dispatched dynamically).
-const KNOWN_BUILTINS = new Set(["server", "daemon", "help"]);
+const KNOWN_BUILTINS = new Set(["server", "daemon", "help", "version"]);
 
 function exitWithError(e) {
   if (e instanceof AgentCliError) {
@@ -90,29 +91,9 @@ function serversHelpSection(cfg) {
     "",
     "Configured servers (agentcli <server> <tool> ...):",
     ...lines,
-    "  agentcli <server> --help    List a server\u0027s tools",
+    "  agentcli <server> --help    List a server's tools",
     "",
   ].join("\n");
-}
-// Tiny edit-distance for "did you mean" suggestions (typo-tolerant, no deps).
-function levenshtein(a, b) {
-  const m = a.length;
-  const n = b.length;
-  if (Math.abs(m - n) > 3) return Infinity;
-  let prev = Array.from({ length: n + 1 }, (_, i) => i);
-  for (let i = 1; i <= m; i++) {
-    const curr = [i];
-    for (let j = 1; j <= n; j++) {
-      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
-    }
-    prev = curr;
-  }
-  return prev[n];
-}
-
-function fuzzyMatch(typed, candidate) {
-  if (candidate.includes(typed)) return true;
-  return levenshtein(typed, candidate) <= Math.max(1, Math.floor(candidate.length / 3));
 }
 
 function buildBuiltins(cfg) {
@@ -247,6 +228,11 @@ export async function run(argv) {
     const cfg = loadConfig();
     const first = rest[0];
 
+    if (first === "version") {
+      console.log(version);
+      return;
+    }
+
     // Dynamic path: `agentcli <server> <tool> [flags...]`
     if (first && cfg.servers[first]) {
       const code = await runServerCommand(cfg, first, rest.slice(1));
@@ -259,8 +245,7 @@ export async function run(argv) {
     // self-correct without another roundtrip.
     if (first && !first.startsWith("-") && !cfg.servers[first] && !KNOWN_BUILTINS.has(first)) {
       const names = Object.keys(cfg.servers);
-      const lower = first.toLowerCase();
-      const near = names.filter((n) => fuzzyMatch(lower, n.toLowerCase()));
+      const near = suggest(first, names);
       const hints = [];
       if (near.length) hints.push("Did you mean: " + near.join(", ") + "?");
       hints.push(

@@ -1,6 +1,7 @@
 // Dispatch `agentcli <server> <tool> [flags]` — the core execution path.
 // Hand-rolled token parsing (commander is bypassed for the dynamic part).
 import { listTools, callTool } from "./client.js";
+import { suggest } from "./fuzzy.js";
 import { buildFlagPlan, parseToolArgs, readInputJson, mergeArgs, renderToolHelp } from "./flags.js";
 import { errors, EXIT } from "./errors.js";
 import { printJson } from "./jsonout.js";
@@ -36,8 +37,7 @@ function extractData(result) {
 }
 
 function toolNotFound(serverName, toolName, tools) {
-  const lower = toolName.toLowerCase();
-  const similar = tools.map((t) => t.name).filter((n) => n.toLowerCase().includes(lower) || lower.includes(n.toLowerCase().split(/[_-]/)[0]));
+  const similar = suggest(toolName, tools.map((t) => t.name)).slice(0, 5);
   const hints = [];
   if (similar.length) hints.push("Similar tools: " + similar.join(", "));
   hints.push("List tools: agentcli " + serverName + " --help");
@@ -71,7 +71,7 @@ export async function runServerCommand(cfg, serverName, tail) {
   const wantsHelp = rest.includes("--help") || rest.includes("-h");
   const wantsSchema = rest.includes("--schema");
   const noDaemon = rest.includes("--no-daemon");
-  const { tools, cached, via: discoveryVia } = await listTools(cfg, serverName, { refresh: rest.includes("--refresh"), daemon: !noDaemon });
+  const { tools, cached } = await listTools(cfg, serverName, { refresh: rest.includes("--refresh"), daemon: !noDaemon });
   const tool = tools.find((t) => t.name === toolName);
   if (!tool) throw toolNotFound(serverName, toolName, tools);
 

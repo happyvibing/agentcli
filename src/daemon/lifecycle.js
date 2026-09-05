@@ -12,6 +12,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+function requireUnix() {
+  if (process.platform === "win32") {
+    throw errors.usage("daemon mode requires unix sockets and is not supported on Windows yet", "calls still work without the daemon (direct mode)");
+  }
+}
+
 async function isAlive() {
   try {
     const r = await daemonRequest("ping", {}, { timeoutMs: 1500 });
@@ -24,6 +30,7 @@ async function isAlive() {
 // `agentcli daemon start --foreground` runs it inside this process (debugging);
 // default spawns a detached child that survives the CLI process.
 export async function startDaemon({ foreground = false } = {}) {
+  requireUnix();
   if (foreground) {
     const r = await runDaemon();
     if (r && r.alreadyRunning) return { ok: true, alreadyRunning: true };
@@ -50,6 +57,7 @@ export async function startDaemon({ foreground = false } = {}) {
 }
 
 export async function stopDaemon() {
+  requireUnix();
   try {
     const status = await daemonRequest("status", {}, { timeoutMs: 3000 });
     await daemonRequest("shutdown", {}, { timeoutMs: 5000 });

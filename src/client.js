@@ -1,11 +1,10 @@
 // MCP backend: persistent (daemon) or per-call (direct) execution paths.
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { SUPPORTED_PROTOCOL_VERSIONS } from "@modelcontextprotocol/sdk/types.js";
+//
+// The MCP SDK is imported lazily (see sdk()); daemon-routed calls never touch
+// it, which keeps CLI startup fast for the common agent path.
 import net from "node:net";
 import { readToolsCache, writeToolsCache } from "./config.js";
-import { AgentCliError, errors, reviveError } from "./errors.js";
+import { errors, reviveError } from "./errors.js";
 import { socketPath } from "./daemon/paths.js";
 
 const CLIENT_INFO = { name: "agentcli", version: "0.3.0" };
@@ -22,7 +21,7 @@ export function timeoutFromEnv() {
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_TIMEOUT_MS;
 }
 
-// --- Protocol version compatibility ---
+// --- SDK lazy loading + protocol version compatibility ---
 //
 // MCP spec latest is 2026-07-28 (modelcontextprotocol.io), but SDK 1.30.0 only
 // negotiates up to 2025-11-25 and *rejects* servers answering with a newer
@@ -32,12 +31,29 @@ export function timeoutFromEnv() {
 // tools/list / tools/call) are wire-stable across these versions.
 // Override with AGENTCLI_PROTOCOL_VERSIONS (comma-separated). Dedup-safe once
 // the SDK ships these versions itself.
-const EXTRA_PROTOCOL_VERSIONS = (process.env.AGENTCLI_PROTOCOL_VERSIONS ?? "2026-07-28")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
-for (const v of EXTRA_PROTOCOL_VERSIONS) {
-  if (!SUPPORTED_PROTOCOL_VERSIONS.includes(v)) SUPPORTED_PROTOCOL_VERSIONS.push(v);
+
+let sdkPromise = null;
+
+export function sdk() {
+  if (!sdkPromise) {
+    sdkPromise = (async () => {
+      const [{ Client }, { StdioClientTransport }, { StreamableHTTPClientTransport }, { SUPPORTED_PROTOCOL_VERSIONS }] = await Promise.all([
+        import("@modelcontextprotocol/sdk/client/index.js"),
+        import("@modelcontextprotocol/sdk/client/stdio.js"),
+        import("@modelcontextprotocol/sdk/client/streamableHttp.js"),
+        import("@modelcontextprotocol/sdk/types.js"),
+      ]);
+      const extra = (process.env.AGENTCLI_PROTOCOL_VERSIONS ?? "2026-07-28")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      for (const v of extra) {
+        if (!SUPPORTED_PROTOCOL_VERSIONS.includes(v)) SUPPORTED_PROTOCOL_VERSIONS.push(v);
+      }
+      return { Client, StdioClientTransport, StreamableHTTPClientTransport };
+    })();
+  }
+  return sdkPromise;
 }
 
 // Only pass a whitelist of env vars to spawned MCP servers (credential isolation:
@@ -62,7 +78,8 @@ function parseHeaders(headerList) {
   return headers;
 }
 
-export function createTransport(spec) {
+export async function createTransport(spec) {
+  const { StdioClientTransport, StreamableHTTPClientTransport } = await sdk();
   if (spec.type === "http") {
     return new StreamableHTTPClientTransport(new URL(spec.url), {
       requestInit: { headers: parseHeaders(spec.headers) },
@@ -86,7 +103,8 @@ function mapError(e, serverName, stderrTail) {
 }
 
 async function withClient(spec, serverName, fn, timeoutMs) {
-  const transport = createTransport(spec);
+  const { Client } = await sdk();
+  const transport = await createTransport(spec);
   const client = new Client(CLIENT_INFO);
   let stderrTail = "";
   if (transport.stderr && typeof transport.stderr.on === "function") {
