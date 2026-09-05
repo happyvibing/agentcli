@@ -4,7 +4,7 @@
 import fs from "node:fs";
 import { errors } from "./errors.js";
 
-const CONTROL_FLAGS = new Set(["input", "output", "schema", "refresh", "help", "timeout-ms"]);
+const CONTROL_FLAGS = new Set(["input", "output", "schema", "refresh", "help", "timeout-ms", "no-daemon"]);
 
 export function buildFlagPlan(inputSchema) {
   const schema = inputSchema || {};
@@ -74,7 +74,7 @@ export function parseToolArgs(plan, tokens) {
       hasValue = true;
     }
     if (CONTROL_FLAGS.has(body)) {
-      if (body === "schema" || body === "refresh" || body === "help") {
+      if (body === "schema" || body === "refresh" || body === "help" || body === "no-daemon") {
         opts[body] = hasValue ? value === "true" : true;
       } else {
         if (!hasValue) {

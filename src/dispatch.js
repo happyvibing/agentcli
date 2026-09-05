@@ -70,7 +70,8 @@ export async function runServerCommand(cfg, serverName, tail) {
   // 2. tool-level help / schema need the tool definition
   const wantsHelp = rest.includes("--help") || rest.includes("-h");
   const wantsSchema = rest.includes("--schema");
-  const { tools, cached } = await listTools(cfg, serverName, { refresh: rest.includes("--refresh") });
+  const noDaemon = rest.includes("--no-daemon");
+  const { tools, cached, via: discoveryVia } = await listTools(cfg, serverName, { refresh: rest.includes("--refresh"), daemon: !noDaemon });
   const tool = tools.find((t) => t.name === toolName);
   if (!tool) throw toolNotFound(serverName, toolName, tools);
 
@@ -103,7 +104,7 @@ export async function runServerCommand(cfg, serverName, tail) {
 
   // 4. execute
   const started = Date.now();
-  const result = await callTool(cfg, serverName, toolName, args, { timeoutMs });
+  const { result, via } = await callTool(cfg, serverName, toolName, args, { timeoutMs, daemon: !noDaemon });
 
   if (result.isError) {
     throw errors.execution(extractText(result) || "tool reported an error without a message");
@@ -120,7 +121,7 @@ export async function runServerCommand(cfg, serverName, tail) {
     server: serverName,
     tool: toolName,
     data: extractData(result),
-    meta: { durationMs: Date.now() - started, schemaCached: cached },
+    meta: { durationMs: Date.now() - started, schemaCached: cached, via },
   });
   return EXIT.OK;
 }

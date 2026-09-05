@@ -127,7 +127,23 @@ result=$(agentcli github search_issue --repo x/y --query "leak") || handle_error
 
 ## Behavior notes
 
-- **Tool-list cache**: `tools/list` results are cached next to the config (default TTL 10 min);
+- **Tool-list cache**: `tools/list` results are cached (daemon: in memory, direct: on disk next to the
+  config; default TTL 10 min). `--refresh` bypasses; `AGENTCLI_TTL_MS` / `AGENTCLI_TIMEOUT_MS` tune TTL
+  and request timeout.
+- **Daemon mode**: `agentcli daemon start` keeps persistent MCP connections so repeated calls skip the
+  spawn + handshake — measured ~2400 ms → ~3 ms against `server-everything` via npx. Calls route through
+  it automatically and fall back to the per-call path whenever it is unreachable. `daemon stop` /
+  `daemon status` / `daemon restart` manage it; `--no-daemon` or `AGENTCLI_NO_DAEMON=1` bypasses it;
+  `AGENTCLI_DAEMON_IDLE_MS` sets the idle shutdown (default 30 min). A non-idempotent tool can never
+  run twice: once a request has reached the daemon, failures are surfaced, not retried directly.
+- **Credential isolation**: spawned stdio servers receive only a small env whitelist
+  (`PATH`, `HOME`, …) plus explicit `--env KEY=value`; nothing else leaks from the agent's environment.
+- **Config**: `~/.agentcli/config.json` (override with `AGENTCLI_CONFIG` or `--config <path>`).
+- **Protocol versions**: the bundled official SDK negotiates up to 2025-11-25; we extend its accepted
+  versions with the current spec (2026-07-28, see modelcontextprotocol.io) so newer servers connect.
+  Override with `AGENTCLI_PROTOCOL_VERSIONS`. Legacy 2024-11-05 HTTP+SSE servers need an SSE fallback
+  (not yet implemented).
+- Server names are reserved if they collide with built-ins (`server`, `daemon`, `call`, `help`, …).
   `--refresh` bypasses, `AGENTCLI_TTL_MS` / `AGENTCLI_TIMEOUT_MS` tune TTL and request timeout.
 - **Credential isolation**: spawned stdio servers receive only a small env whitelist
   (`PATH`, `HOME`, …) plus explicit `--env KEY=value`; nothing else leaks from the agent's environment.
@@ -161,6 +177,7 @@ npm test    # e2e suite: spawns a real MCP stdio fixture server (fixtures/echo-s
 ## Out of scope (for now)
 
 Hierarchical namespaces (`github issue search`), semantic search, native CLI / HTTP-API
+adapters, auth `login` flows, policy engine, SSE transport fallback. See the design proposal for the
 adapters, auth `login` flows, policy engine, daemon mode. See the design proposal for the
 full roadmap — protocol details above are considered stable commitments and will not change
 casually.

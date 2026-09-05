@@ -5,6 +5,7 @@ import { AgentCliError, errors, EXIT } from "./errors.js";
 import { printError, printJson } from "./jsonout.js";
 import { runServerCommand } from "./dispatch.js";
 import { listTools } from "./client.js";
+import { startDaemon, stopDaemon, daemonStatus } from "./daemon/lifecycle.js";
 
 const { version } = pkg;
 
@@ -148,6 +149,41 @@ function buildBuiltins(cfg) {
         ok: true,
         data: tools.map((t) => ({ name: t.name, description: t.description || "" })),
       });
+    });
+  const daemon = program
+    .command("daemon")
+    .description("Manage the background daemon (persistent MCP connections, fast repeated calls).")
+    .action((opts, cmd) => cmd.help());
+
+  daemon
+    .command("start")
+    .description("Start the daemon in the background (persists after this command exits).")
+    .option("-f, --foreground", "Run in the foreground (logs to console; Ctrl-C stops it)")
+    .action(async (opts) => {
+      const r = await startDaemon({ foreground: !!opts.foreground });
+      printJson(r);
+    });
+
+  daemon
+    .command("stop")
+    .description("Stop a running daemon.")
+    .action(async () => {
+      printJson(await stopDaemon());
+    });
+
+  daemon
+    .command("status")
+    .description("Show whether the daemon runs, plus uptime and connected servers.")
+    .action(async () => {
+      printJson(await daemonStatus());
+    });
+
+  daemon
+    .command("restart")
+    .description("Stop then start the daemon.")
+    .action(async () => {
+      await stopDaemon();
+      printJson(await startDaemon());
     });
 
   return program;

@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { errors } from "./errors.js";
 
-export const RESERVED_NAMES = new Set(["server", "call", "help", "version", "config", "doctor", "completion"]);
+export const RESERVED_NAMES = new Set(["server", "call", "help", "version", "config", "doctor", "completion", "daemon"]);
 
 export function configPath() {
   return process.env.AGENTCLI_CONFIG || path.join(os.homedir(), ".agentcli", "config.json");

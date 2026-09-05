@@ -1,4 +1,4 @@
-// Error taxonomy + exit-code protocol (see docs/PROTOCOL section in README).
+// Error taxonomy + exit-code protocol (see README "Output protocol").
 export const EXIT = {
   OK: 0,               // success
   EXECUTION: 1,        // tool execution failure / transport failure
@@ -34,3 +34,22 @@ export const errors = {
   usage: (message, hint) =>
     new AgentCliError("USAGE", message, { exitCode: EXIT.INVALID_ARGUMENT, hint }),
 };
+
+// Wire format for daemon <-> CLI error transport.
+export function serializeError(e) {
+  if (e instanceof AgentCliError) {
+    return { code: e.code, message: e.message, hint: e.hint, details: e.details, exitCode: e.exitCode };
+  }
+  return { code: "INTERNAL", message: String((e && e.message) || e), exitCode: EXIT.EXECUTION };
+}
+
+export function reviveError(raw) {
+  if (raw && typeof raw.code === "string" && typeof raw.exitCode === "number") {
+    return new AgentCliError(raw.code, raw.message || "unknown error", {
+      exitCode: raw.exitCode,
+      hint: raw.hint,
+      details: raw.details,
+    });
+  }
+  return new AgentCliError("INTERNAL", (raw && raw.message) || "unknown error");
+}

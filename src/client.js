@@ -1,11 +1,14 @@
-// MCP client: connect (stdio | streamable HTTP), listTools (with cache), callTool.
+// MCP backend: persistent (daemon) or per-call (direct) execution paths.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { SUPPORTED_PROTOCOL_VERSIONS } from "@modelcontextprotocol/sdk/types.js";
+import net from "node:net";
 import { readToolsCache, writeToolsCache } from "./config.js";
-import { errors } from "./errors.js";
+import { AgentCliError, errors, reviveError } from "./errors.js";
+import { socketPath } from "./daemon/paths.js";
 
-const CLIENT_INFO = { name: "agentcli", version: "0.2.0" };
+const CLIENT_INFO = { name: "agentcli", version: "0.3.0" };
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 60 * 1000;
 
@@ -19,11 +22,29 @@ export function timeoutFromEnv() {
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_TIMEOUT_MS;
 }
 
+// --- Protocol version compatibility ---
+//
+// MCP spec latest is 2026-07-28 (modelcontextprotocol.io), but SDK 1.30.0 only
+// negotiates up to 2025-11-25 and *rejects* servers answering with a newer
+// version. SUPPORTED_PROTOCOL_VERSIONS is the very array instance the SDK
+// client checks, so extending it (ESM live binding to a mutable array) makes
+// us accept servers speaking the newer spec. Core methods (initialize /
+// tools/list / tools/call) are wire-stable across these versions.
+// Override with AGENTCLI_PROTOCOL_VERSIONS (comma-separated). Dedup-safe once
+// the SDK ships these versions itself.
+const EXTRA_PROTOCOL_VERSIONS = (process.env.AGENTCLI_PROTOCOL_VERSIONS ?? "2026-07-28")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+for (const v of EXTRA_PROTOCOL_VERSIONS) {
+  if (!SUPPORTED_PROTOCOL_VERSIONS.includes(v)) SUPPORTED_PROTOCOL_VERSIONS.push(v);
+}
+
 // Only pass a whitelist of env vars to spawned MCP servers (credential isolation:
 // whatever else sits in the agent's environment never reaches the server process).
 const ENV_WHITELIST = ["PATH", "PATHEXT", "HOME", "USERPROFILE", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL", "SYSTEMROOT", "COMSPEC"];
 
-function buildEnv(specEnv) {
+export function buildEnv(specEnv) {
   const base = {};
   for (const k of ENV_WHITELIST) {
     if (process.env[k] !== undefined) base[k] = process.env[k];
@@ -41,7 +62,7 @@ function parseHeaders(headerList) {
   return headers;
 }
 
-function createTransport(spec) {
+export function createTransport(spec) {
   if (spec.type === "http") {
     return new StreamableHTTPClientTransport(new URL(spec.url), {
       requestInit: { headers: parseHeaders(spec.headers) },
@@ -100,11 +121,82 @@ function requireServer(cfg, serverName) {
   return spec;
 }
 
-export async function listTools(cfg, serverName, { refresh = false, ttlMs = ttlFromEnv(), timeoutMs } = {}) {
+// --- daemon (persistent connections) ---
+
+export class DaemonUnavailable extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "DaemonUnavailable";
+    this.unavailable = true;
+  }
+}
+
+export function daemonEnabled(pref = true) {
+  if (!pref) return false;
+  if (process.env.AGENTCLI_NO_DAEMON) return false;
+  return process.platform !== "win32";
+}
+
+let daemonSeq = 0;
+
+// One request per connection: simple, robust against daemon restarts.
+export async function daemonRequest(op, payload = {}, { timeoutMs = 65000 } = {}) {
+  return new Promise((resolve, reject) => {
+    let buf = "";
+    let connected = false;
+    const sock = net.connect(socketPath());
+    const timer = setTimeout(() => {
+      sock.destroy();
+      reject(connected ? errors.timeout("daemon request timed out: " + op) : new DaemonUnavailable("daemon timeout"));
+    }, timeoutMs);
+    const fail = (e) => {
+      clearTimeout(timer);
+      reject(connected ? e : new DaemonUnavailable(String((e && e.message) || e)));
+    };
+    sock.on("error", fail);
+    sock.on("connect", () => {
+      connected = true;
+      sock.write(JSON.stringify({ id: ++daemonSeq, op, ...payload }) + "\n");
+    });
+    sock.on("data", (d) => {
+      buf += d.toString();
+      const nl = buf.indexOf("\n");
+      if (nl < 0) return;
+      clearTimeout(timer);
+      sock.end();
+      let msg;
+      try {
+        msg = JSON.parse(buf.slice(0, nl));
+      } catch (e) {
+        reject(errors.connect("daemon sent invalid response: " + e.message));
+        return;
+      }
+      if (msg.ok) resolve(msg.result);
+      else reject(reviveError(msg.error));
+    });
+  });
+}
+
+// --- public API: listTools / callTool (daemon first, direct fallback) ---
+//
+// Fallback only happens when the daemon is *unreachable* (not running / stale
+// socket / connect timeout). Once a request has reached the daemon, failures
+// are surfaced as-is — never retried against a fresh process, or a non-idempotent
+// tool could run twice.
+
+export async function listTools(cfg, serverName, { refresh = false, ttlMs = ttlFromEnv(), timeoutMs, daemon = true } = {}) {
   const spec = requireServer(cfg, serverName);
+  if (daemonEnabled(daemon)) {
+    try {
+      const r = await daemonRequest("listTools", { server: serverName, refresh }, { timeoutMs: timeoutMs ?? 30000 });
+      return { tools: r.tools || [], cached: !!r.cached, via: "daemon" };
+    } catch (e) {
+      if (!(e instanceof DaemonUnavailable) && !e.unavailable) throw e;
+    }
+  }
   if (!refresh) {
     const cached = readToolsCache(serverName, ttlMs);
-    if (cached && cached.fresh) return { tools: cached.tools, cached: true };
+    if (cached && cached.fresh) return { tools: cached.tools, cached: true, via: "direct" };
   }
   try {
     const tools = await withClient(spec, serverName, async (client) => {
@@ -112,18 +204,27 @@ export async function listTools(cfg, serverName, { refresh = false, ttlMs = ttlF
       return res.tools || [];
     }, timeoutMs);
     writeToolsCache(serverName, tools);
-    return { tools, cached: false };
+    return { tools, cached: false, via: "direct" };
   } catch (e) {
     throw mapError(e, serverName);
   }
 }
 
-export async function callTool(cfg, serverName, toolName, args, { timeoutMs } = {}) {
+export async function callTool(cfg, serverName, toolName, args, { timeoutMs, daemon = true } = {}) {
   const spec = requireServer(cfg, serverName);
+  if (daemonEnabled(daemon)) {
+    try {
+      const result = await daemonRequest("callTool", { server: serverName, tool: toolName, args: args || {}, timeoutMs: timeoutMs ?? timeoutFromEnv() }, { timeoutMs: (timeoutMs ?? timeoutFromEnv()) + 10000 });
+      return { result, via: "daemon" };
+    } catch (e) {
+      if (!(e instanceof DaemonUnavailable) && !e.unavailable) throw e;
+    }
+  }
   try {
-    return await withClient(spec, serverName, async (client) => {
+    const result = await withClient(spec, serverName, async (client) => {
       return client.callTool({ name: toolName, arguments: args || {} }, undefined, { timeout: timeoutMs ?? timeoutFromEnv() });
     }, timeoutMs);
+    return { result, via: "direct" };
   } catch (e) {
     throw mapError(e, serverName);
   }
