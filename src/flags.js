@@ -95,13 +95,22 @@ export function parseToolArgs(plan, tokens) {
       throw errors.invalidArgument("unknown option --" + body, hints.join(" | "));
     }
     let raw = value;
-    if (!hasValue && spec.type !== "boolean") {
+    if (!hasValue && spec.type === "boolean") {
+      // Boolean flags are usually valueless (--flag), but accept an explicit
+      // --flag true|false as long as the next token looks like a value, not a flag.
+      const next = tokens[i + 1];
+      if (next !== undefined && !next.startsWith("--") && (next === "true" || next === "false")) {
+        raw = next;
+        i++;
+      } else {
+        raw = "true";
+      }
+    } else if (!hasValue) {
       raw = tokens[++i];
       if (raw === undefined || raw.startsWith("--")) {
         throw errors.invalidArgument("--" + body + " requires a value", "Use --" + body + "=<value> when the value itself starts with --");
       }
     }
-    if (hasValue === false && spec.type === "boolean") raw = "true";
     const parsed = coerceValue(spec, raw);
     if (spec.type === "array") {
       (args[body] ||= []).push(parsed);

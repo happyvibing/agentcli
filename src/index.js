@@ -40,12 +40,12 @@ function exitWithError(e) {
   process.exitCode = EXIT.EXECUTION;
 }
 
-function parseKeyValueList(list, flagName, expected) {
+function parseKeyValueList(list, flagName, expected, sep = "=") {
   const out = {};
   for (const kv of list || []) {
-    const idx = kv.indexOf("=");
+    const idx = kv.indexOf(sep);
     if (idx <= 0) throw errors.invalidArgument("invalid --" + flagName + ' "' + kv + '"', "Expected " + expected);
-    out[kv.slice(0, idx)] = kv.slice(idx + 1);
+    out[kv.slice(0, idx).trim()] = kv.slice(idx + sep.length).trim();
   }
   return out;
 }
@@ -124,7 +124,7 @@ function buildBuiltins(cfg) {
       const current = loadConfig();
       if (opts.url) {
         if (cmd && cmd.length) throw errors.usage("--url and a command are mutually exclusive");
-        addServer(current, name, { type: "http", url: opts.url, headers: parseKeyValueList(opts.header, "header", '"Name: value"') });
+        addServer(current, name, { type: "http", url: opts.url, headers: parseKeyValueList(opts.header, "header", '"Name: value"', ":") });
       } else {
         if (!cmd || cmd.length === 0) {
           throw errors.usage(

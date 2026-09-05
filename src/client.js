@@ -68,9 +68,18 @@ export function buildEnv(specEnv) {
   return { ...base, ...(specEnv || {}) };
 }
 
+// Accepts both config shapes: {Name: value} (stored config) and
+// ["Name: value", ...] (raw --header flags).
 function parseHeaders(headerList) {
+  if (!headerList) return {};
+  if (!Array.isArray(headerList)) {
+    if (typeof headerList !== "object") {
+      throw errors.invalidArgument("invalid headers: expected an object or array of \"Name: value\" strings");
+    }
+    return { ...headerList };
+  }
   const headers = {};
-  for (const h of headerList || []) {
+  for (const h of headerList) {
     const idx = h.indexOf(":");
     if (idx <= 0) throw errors.invalidArgument('invalid header "' + h + '"', 'Expected "Name: value"');
     headers[h.slice(0, idx).trim()] = h.slice(idx + 1).trim();
