@@ -23,8 +23,8 @@ test("skill file exists with valid frontmatter", () => {
 test("skill teaches the core loop commands", () => {
   const raw = fs.readFileSync(SKILL, "utf8");
   assert.match(raw, /agentcli server list/);
-  assert.match(raw, /<server> --help/);
-  assert.match(raw, /<tool> --help/);
+  assert.match(raw, /<server> -h|--help/);
+  assert.match(raw, /<tool> -h|--help/);
 });
 
 test("skill documents the escape hatch and flags", () => {

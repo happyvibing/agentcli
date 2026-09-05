@@ -13,14 +13,14 @@ memory; look them up on demand.
 
 ```bash
 # 1. What servers are configured?
-agentcli --help          # lists configured servers (and built-ins)
+agentcli -h              # lists configured servers (and built-ins)
 agentcli server list     # same, as JSON
 
 # 2. What tools does a server have?
-agentcli <server> --help
+agentcli <server> -h
 
 # 3. How is one tool called? (generated from its JSON schema — read before first use)
-agentcli <server> <tool> --help
+agentcli <server> <tool> -h
 
 # 4. Execute
 agentcli <server> <tool> --flag value --other-flag
