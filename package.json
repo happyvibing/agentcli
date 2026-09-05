@@ -1,9 +1,9 @@
 {
-  "name": "@agenticbro/agentcli",
+  "name": "@happyvibing/agentcli",
   "version": "0.0.1",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/agenticbro/agentcli.git"
+    "url": "git+ssh://git@github.com/happyvibing/agentcli.git"
   },
   "description": "AgentCLI — call MCP servers from the command line. One CLI, any MCP server.",
   "type": "module",

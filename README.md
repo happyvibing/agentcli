@@ -19,7 +19,7 @@ thing machine-consumable.
 ## Install
 
 ```bash
-npm install -g @agenticbro/agentcli
+npm install -g @happyvibing/agentcli
 ```
 
 Requires Node >= 20.
