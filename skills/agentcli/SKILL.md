@@ -37,7 +37,8 @@ agentcli <server> <tool> --schema
 1. **Never guess flags.** If you have not seen this tool's `--help` in this session, run it first.
 2. **stdout is data, stderr is errors.** Success output is JSON by default; parse it.
    A non-zero exit code means failure — read the one-line JSON on stderr and follow its `hint` if present.
-3. **Prefer `--output text` only when pasting prose for a human.** Default JSON for anything you process.
+3. **Default JSON wraps the payload in an envelope** — take results from `.data`.
+   `--output text` is payload-only (no envelope): pretty-printed JSON for structured results, raw text for prose.
 4. **Complex parameters go through `--input`**: object, nested, or anyOf values are not flags.
 
 ```bash

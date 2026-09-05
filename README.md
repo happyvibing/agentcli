@@ -139,9 +139,19 @@ Success (`--output json`, the default):
 }
 ```
 
-- `data`: `structuredContent` if the server sent one; otherwise text content parsed
-  as JSON when it parses, passed through as text when it doesn't.
+- `data`: the payload itself. `structuredContent` if the server sent one; otherwise text
+  content parsed as JSON — including bounded unwrapping of doubly-encoded strings
+  (`JSON.stringify(JSON.stringify(payload))`, common among HTTP servers). Never a
+  JSON-string-in-a-string.
 - `meta.via`: `"daemon"` when the call reused a persistent connection, `"direct"` otherwise.
+
+`--output text` drops the envelope — payload only, jq-ready:
+
+```bash
+agentcli github search_issues --repo x/y --query "leak" --output text | jq -r '.[0].title'
+```
+
+Structured results pretty-print as JSON; prose passes through raw.
 
 Failure — one JSON line on stderr:
 
@@ -167,25 +177,17 @@ So an agent can safely do:
 result=$(agentcli github search_issues --repo x/y --query "leak") || handle_error
 ```
 
-## Behavior notes
+### Environment
 
-- **Tool-list cache**: `tools/list` results are cached (daemon: in memory, direct: on disk next to the
-  config; default TTL 10 min). `--refresh` bypasses; `AGENTCLI_TTL_MS` / `AGENTCLI_TIMEOUT_MS` tune TTL
-  and request timeout. A corrupted cache file is recovered transparently.
-- **Daemon mode**: `agentcli daemon start` keeps persistent MCP connections so repeated calls skip the
-  spawn + handshake — measured ~2400 ms → ~3 ms per call for a stdio server launched via npx. Calls route
-  through it automatically and fall back to the per-call path whenever it is unreachable. `--no-daemon`
-  or `AGENTCLI_NO_DAEMON=1` bypasses it; `AGENTCLI_DAEMON_IDLE_MS` sets the idle shutdown (default 30 min).
-  A non-idempotent tool can never run twice: once a request has reached the daemon, failures are surfaced,
-  not retried. Unix sockets only (skipped on Windows). The socket is `0600`.
-- **Credential isolation**: spawned stdio servers receive only a small env whitelist
-  (`PATH`, `HOME`, …) plus explicit `--env KEY=value`; nothing else leaks from the agent's environment.
-- **Config**: `~/.agentcli/config.json` (override with `AGENTCLI_CONFIG` or `--config <path>`).
-- **Protocol versions**: the bundled official SDK negotiates up to 2025-11-25; we extend its accepted
-  versions with the current spec (2026-07-28, see modelcontextprotocol.io) so newer servers connect.
-  Override with `AGENTCLI_PROTOCOL_VERSIONS`. Legacy 2024-11-05 HTTP+SSE servers need an SSE fallback
-  (not yet implemented).
-- Server names are reserved if they collide with built-ins (`server`, `daemon`, `call`, `help`, …).
+| Variable | Effect (default) |
+|---|---|
+| `AGENTCLI_CONFIG` | config path (`~/.agentcli/config.json`) |
+| `AGENTCLI_TIMEOUT_MS` | per-request timeout (60000) |
+| `AGENTCLI_TTL_MS` | tool-list cache TTL (10 min) |
+| `AGENTCLI_NO_DAEMON` | `1` = never use the daemon |
+| `AGENTCLI_DAEMON_IDLE_MS` | daemon idle shutdown (30 min) |
+| `AGENTCLI_CACHE_DIR` | cache location (next to the config) |
+| `AGENTCLI_PROTOCOL_VERSIONS` | extra accepted protocol versions |
 
 ## Agent Skill
 
