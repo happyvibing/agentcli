@@ -2,11 +2,18 @@
 
 **One CLI. Any MCP server.** Call MCP servers from the command line — dynamically, with no per-tool wrapper code.
 
-> AgentCLI turns any MCP server into a set of CLI commands, on the fly:
->
 > ```bash
-> agentcli github issue search --repo apache/hertzbeat --query "memory leak"
+> $ agentcli zsearch web_search_prime --search_query "MCP latest version" --location cn
+> {
+>   "ok": true,
+>   "server": "zsearch",
+>   "tool": "web_search_prime",
+>   "data": [ { "title": "…", "link": "…", "content": "…" }, … ],
+>   "meta": { "durationMs": 2144, "schemaCached": true, "via": "direct" }
+> }
 > ```
+
+Every MCP tool becomes a CLI command the first time you type it. Flags are compiled from the tool's JSON Schema on the fly.
 
 ## Why
 
@@ -22,24 +29,53 @@ thing machine-consumable.
 npm install -g @happyvibing/agentcli
 ```
 
-Requires Node >= 20.
+Requires Node >= 20. Or run from source: `git clone && npm install && npm link`.
 
-## Quick start
+## Try it in 30 seconds
+
+With a server that needs no credentials:
 
 ```bash
-# Register a stdio MCP server
-agentcli server add github -- npx -y @modelcontextprotocol/server-github
+agentcli server add everything -- npx -y @modelcontextprotocol/server-everything
 
-# Or a Streamable HTTP server
-agentcli server add feishu --url https://feishu.example.com/mcp --header "Authorization: Bearer $TOKEN"
+agentcli everything --help                # what tools exist?
+agentcli everything get-sum --help        # how is one called?
+agentcli everything get-sum --a 40 --b 2  # call it
+```
 
-# Discover
-agentcli server list
-agentcli github --help              # list the server's tools
-agentcli github search_issue --help # generated usage from the tool's JSON schema
+Generated usage looks like this (straight from the tool's schema, nothing hand-written):
 
-# Execute
-agentcli github search_issue --repo apache/hertzbeat --query "memory leak" --output text
+```text
+everything get-sum
+
+Returns the sum of two numbers
+
+Usage:
+  agentcli everything get-sum [flags]
+
+Required:
+  --a <number>    First number
+  --b <number>    Second number
+
+Global:
+  --input <json|@file|->    Full JSON arguments object (flags override --input keys)
+  --output <json|text>      Output format (default: json)
+  --schema                  Print the raw tool input schema
+  ...
+```
+
+## Real servers
+
+```bash
+# stdio with env vars (credentials stay out of the agent's environment)
+agentcli server add github --env GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx -- npx -y @modelcontextprotocol/server-github
+
+# Streamable HTTP with auth headers (e.g. Zhipu web search)
+agentcli server add zsearch --url https://open.bigmodel.cn/api/mcp/web_search_prime/mcp \
+  --header "Authorization: Bearer $KEY"
+
+agentcli github search_issues --help
+agentcli zsearch web_search_prime --search_query "GLM-5" --location cn
 ```
 
 ## Commands
@@ -47,19 +83,19 @@ agentcli github search_issue --repo apache/hertzbeat --query "memory leak" --out
 | Command | Purpose |
 |---|---|
 | `agentcli --help` | Overview: built-ins **and configured servers** (discovery entry point) |
-| `agentcli server add <name> -- <command...>` | Register a stdio server |
+| `agentcli server add <name> -- <command...>` | Register a stdio server (`--env KEY=value` repeatable) |
 | `agentcli server add <name> --url <url>` | Register a Streamable HTTP server (`--header` repeatable) |
-| `agentcli server list` | Configured servers (JSON by default, `-o text` for humans) |
-| `agentcli server tools <name>` | Tools a server exposes (`--refresh` bypasses cache) |
+| `agentcli server list` / `server tools <name>` | Configured servers / a server's tools (JSON default, `-o text` for humans) |
 | `agentcli server remove <name>` | Unregister |
 | `agentcli <server> --help` | List tools |
 | `agentcli <server> <tool> --help` | Generated usage for one tool |
 | `agentcli <server> <tool> --schema` | Raw JSON Schema of the tool input |
 | `agentcli <server> <tool> [flags]` | Execute |
 | `agentcli daemon start/stop/status/restart` | Manage the background daemon |
+| `agentcli version` | Print version |
 
-Unknown server names get typo-tolerant suggestions (`Did you mean: everything?`), so a
-mistyped first word self-corrects without another discovery roundtrip.
+Unknown server or tool names get typo-tolerant suggestions
+(`Did you mean: everything?`), so a mistyped word self-corrects without another discovery roundtrip.
 
 ### Flags
 
@@ -70,7 +106,7 @@ The tool's JSON Schema is compiled to flags — for top-level primitives:
 | `string` | `--name value` or `--name=value` |
 | `string` + `enum` | `--name choice` (validated) |
 | `integer` / `number` | `--name 3` (parsed, validated) |
-| `boolean` | `--name` or `--name=false` |
+| `boolean` | `--name` (true), `--name=false`, or `--name false` |
 | `array` of primitives | repeat: `--tag a --tag b` |
 | object / anyOf / $ref / … | not a flag — use `--input` |
 
@@ -96,12 +132,13 @@ Success (`--output json`, the default):
   "server": "demo",
   "tool": "echo",
   "data": "hi hi",
-  "meta": { "durationMs": 189, "schemaCached": true }
+  "meta": { "durationMs": 189, "schemaCached": true, "via": "direct" }
 }
 ```
 
-`data` is `structuredContent` if the server sent one; otherwise text content is
-parsed as JSON when it parses, passed through as text when it doesn't.
+- `data`: `structuredContent` if the server sent one; otherwise text content parsed
+  as JSON when it parses, passed through as text when it doesn't.
+- `meta.via`: `"daemon"` when the call reused a persistent connection, `"direct"` otherwise.
 
 Failure — one JSON line on stderr:
 
@@ -131,13 +168,13 @@ result=$(agentcli github search_issue --repo x/y --query "leak") || handle_error
 
 - **Tool-list cache**: `tools/list` results are cached (daemon: in memory, direct: on disk next to the
   config; default TTL 10 min). `--refresh` bypasses; `AGENTCLI_TTL_MS` / `AGENTCLI_TIMEOUT_MS` tune TTL
-  and request timeout.
+  and request timeout. A corrupted cache file is recovered transparently.
 - **Daemon mode**: `agentcli daemon start` keeps persistent MCP connections so repeated calls skip the
-  spawn + handshake — measured ~2400 ms → ~3 ms against `server-everything` via npx. Calls route through
-  it automatically and fall back to the per-call path whenever it is unreachable. `daemon stop` /
-  `daemon status` / `daemon restart` manage it; `--no-daemon` or `AGENTCLI_NO_DAEMON=1` bypasses it;
-  `AGENTCLI_DAEMON_IDLE_MS` sets the idle shutdown (default 30 min). A non-idempotent tool can never
-  run twice: once a request has reached the daemon, failures are surfaced, not retried directly.
+  spawn + handshake — measured ~2400 ms → ~3 ms per call against `server-everything` via npx. Calls route
+  through it automatically and fall back to the per-call path whenever it is unreachable. `--no-daemon`
+  or `AGENTCLI_NO_DAEMON=1` bypasses it; `AGENTCLI_DAEMON_IDLE_MS` sets the idle shutdown (default 30 min).
+  A non-idempotent tool can never run twice: once a request has reached the daemon, failures are surfaced,
+  not retried. Unix sockets only (skipped on Windows). The socket is `0600`.
 - **Credential isolation**: spawned stdio servers receive only a small env whitelist
   (`PATH`, `HOME`, …) plus explicit `--env KEY=value`; nothing else leaks from the agent's environment.
 - **Config**: `~/.agentcli/config.json` (override with `AGENTCLI_CONFIG` or `--config <path>`).
@@ -168,7 +205,7 @@ or into `.agents/skills/` inside a project to scope it to that repo.)
 
 ```bash
 npm install
-npm test    # e2e suite: spawns a real MCP stdio fixture server (fixtures/echo-server.mjs)
+npm test    # 41 tests: e2e against a real MCP stdio fixture + daemon lifecycle + skill guard
 ```
 
 ## Roadmap

@@ -52,7 +52,7 @@ Flags override `--input` keys, so combining them is safe.
 
 - `--flag=value` form works everywhere; use it when a value itself starts with `--`.
 - Arrays: repeat the flag — `--tag a --tag b`.
-- Booleans: presence means true (`--dry-run`), or `--dry-run=false`.
+- Booleans: presence means true (`--dry-run`), or explicit `--dry-run=false` / `--dry-run false`.
 - Numbers are validated; enums reject invalid choices with exit code 2 and list allowed values.
 
 ## Exit codes
@@ -80,6 +80,7 @@ Prefer filtering with tool flags or `jq` over loading everything into context.
 ## Housekeeping
 
 - Tool listings are cached (10 min). Use `--refresh` if a server's tools changed.
+- `meta.via` in the result envelope says `daemon` (persistent connection) or `direct`; purely informational.
 - A background daemon (`agentcli daemon start`) holds server connections so repeated
 calls return in milliseconds; calls route through it automatically. Force the
 per-call path with `--no-daemon` or `AGENTCLI_NO_DAEMON=1` if it misbehaves.
