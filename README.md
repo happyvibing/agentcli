@@ -8,9 +8,6 @@
 > agentcli github issue search --repo apache/hertzbeat --query "memory leak"
 > ```
 
-This is the scoped MVP of a larger idea — a universal Tool Runtime for AI agents
-(discovery, auth, policy across MCP / CLI / HTTP backends). Current scope: **MCP → CLI**, done well.
-
 ## Why
 
 Agents that register every MCP tool upfront pay for it in context: hundreds of schemas
@@ -149,11 +146,6 @@ result=$(agentcli github search_issue --repo x/y --query "leak") || handle_error
   Override with `AGENTCLI_PROTOCOL_VERSIONS`. Legacy 2024-11-05 HTTP+SSE servers need an SSE fallback
   (not yet implemented).
 - Server names are reserved if they collide with built-ins (`server`, `daemon`, `call`, `help`, …).
-  `--refresh` bypasses, `AGENTCLI_TTL_MS` / `AGENTCLI_TIMEOUT_MS` tune TTL and request timeout.
-- **Credential isolation**: spawned stdio servers receive only a small env whitelist
-  (`PATH`, `HOME`, …) plus explicit `--env KEY=value`; nothing else leaks from the agent's environment.
-- **Config**: `~/.agentcli/config.json` (override with `AGENTCLI_CONFIG` or `--config <path>`).
-- Server names are reserved if they collide with built-ins (`server`, `call`, `help`, …).
 
 ## Agent Skill
 
@@ -179,10 +171,8 @@ npm install
 npm test    # e2e suite: spawns a real MCP stdio fixture server (fixtures/echo-server.mjs)
 ```
 
-## Out of scope (for now)
+## Roadmap
 
 Hierarchical namespaces (`github issue search`), semantic search, native CLI / HTTP-API
-adapters, auth `login` flows, policy engine, SSE transport fallback. See the design proposal for the
-adapters, auth `login` flows, policy engine, daemon mode. See the design proposal for the
-full roadmap — protocol details above are considered stable commitments and will not change
-casually.
+adapters, auth `login` flows, policy engine, SSE transport fallback. Protocol details above
+are considered stable commitments and will not change casually.

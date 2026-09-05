@@ -84,6 +84,4 @@ Prefer filtering with tool flags or `jq` over loading everything into context.
 calls return in milliseconds; calls route through it automatically. Force the
 per-call path with `--no-daemon` or `AGENTCLI_NO_DAEMON=1` if it misbehaves.
 - Register servers yourself if missing: `agentcli server add <name> -- <command...>`
-(stdio) or `agentcli server add <name> --url <url>` (HTTP). Ask before adding servers.
-- Register servers yourself if missing: `agentcli server add <name> -- <command...>`
   (stdio) or `agentcli server add <name> --url <url>` (HTTP). Ask before adding servers.

@@ -9,7 +9,7 @@ import { loadConfig } from "../config.js";
 import { errors, serializeError } from "../errors.js";
 import { socketPath, pidPath, logPath, ensureDaemonDir } from "./paths.js";
 
-const CLIENT_INFO = { name: "agentcli-daemon", version: "0.3.0" };
+const CLIENT_INFO = { name: "agentcli-daemon", version: "0.0.1" };
 const DEFAULT_IDLE_MS = 30 * 60 * 1000;
 
 function idleMsFromEnv() {

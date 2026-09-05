@@ -7,7 +7,7 @@ import { readToolsCache, writeToolsCache } from "./config.js";
 import { errors, reviveError } from "./errors.js";
 import { socketPath } from "./daemon/paths.js";
 
-const CLIENT_INFO = { name: "agentcli", version: "0.3.0" };
+const CLIENT_INFO = { name: "agentcli", version: "0.0.1" };
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 60 * 1000;
 
