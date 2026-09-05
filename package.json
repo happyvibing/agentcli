@@ -1,7 +1,11 @@
 {
-  "name": "agentcli",
-  "version": "0.1.0",
-  "description": "A simple Node.js CLI with multiple subcommands, built with commander.",
+  "name": "@agenticbro/agentcli",
+  "version": "0.2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agenticbro/agentcli.git"
+  },
+  "description": "AgentCLI — call MCP servers from the command line. One CLI, any MCP server.",
   "type": "module",
   "bin": {
     "agentcli": "bin/agentcli.js"
@@ -9,13 +13,17 @@
   "files": [
     "bin",
     "src",
+    "skills",
     "README.md"
   ],
   "keywords": [
     "cli",
-    "commander",
+    "mcp",
+    "model-context-protocol",
+    "agent",
+    "ai",
     "agentcli",
-    "demo"
+    "tool-runtime"
   ],
   "license": "MIT",
   "author": "",
@@ -23,14 +31,15 @@
     "access": "public"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "scripts": {
     "start": "node bin/agentcli.js",
-    "prepublishOnly": "pnpm test",
+    "prepublishOnly": "npm test",
     "test": "node --test"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "commander": "^12.1.0"
   }
 }
