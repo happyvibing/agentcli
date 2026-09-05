@@ -9,7 +9,7 @@ const CONTROL_FLAGS = new Set(["input", "output", "schema", "refresh", "help", "
 export function buildFlagPlan(inputSchema) {
   const schema = inputSchema || {};
   const required = new Set(schema.required || []);
-  const plan = { flags: new Map(), complex: [] };
+  const plan = { flags: new Map(), complex: [], required: schema.required || [] };
   const props = schema.properties || {};
   for (const name of Object.keys(props)) {
     const ps = props[name] || {};
@@ -148,6 +148,24 @@ export function readInputJson(spec) {
 
 export function mergeArgs(base, overrides) {
   return { ...(base || {}), ...(overrides || {}) };
+}
+
+// Required parameters must be present after flags + --input merge. A required
+// property with a schema default is left to the server. Throws INVALID_ARGUMENT.
+export function validateRequired(plan, args) {
+  const missing = [];
+  for (const name of plan.required || []) {
+    if (args[name] !== undefined) continue;
+    const spec = plan.flags.get(name);
+    if (spec && spec.default !== undefined) continue;
+    missing.push(name);
+  }
+  if (!missing.length) return;
+  const forms = missing.map((n) => (plan.flags.has(n) ? "--" + n : n + " (via --input)"));
+  throw errors.invalidArgument(
+    "missing required parameter" + (missing.length > 1 ? "s" : "") + ": " + missing.join(", "),
+    "Pass " + forms.join(", ") + " — see --help"
+  );
 }
 
 export function renderToolHelp(serverName, tool) {

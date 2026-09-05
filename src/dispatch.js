@@ -2,7 +2,7 @@
 // Hand-rolled token parsing (commander is bypassed for the dynamic part).
 import { listTools, callTool } from "./client.js";
 import { suggest } from "./fuzzy.js";
-import { buildFlagPlan, parseToolArgs, readInputJson, mergeArgs, renderToolHelp } from "./flags.js";
+import { buildFlagPlan, parseToolArgs, readInputJson, mergeArgs, renderToolHelp, validateRequired } from "./flags.js";
 import { errors, EXIT } from "./errors.js";
 import { printJson } from "./jsonout.js";
 
@@ -103,7 +103,7 @@ export async function runServerCommand(cfg, serverName, tail) {
   if (opts.input !== undefined) {
     args = mergeArgs(readInputJson(opts.input), flagArgs);
   }
-
+  validateRequired(plan, args);
   const output = opts.output || "json";
   if (output !== "json" && output !== "text") {
     throw errors.invalidArgument('invalid --output "' + output + '"', "Supported: json, text");

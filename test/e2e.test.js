@@ -106,6 +106,23 @@ test("enum accepts a valid choice", () => {
   assert.equal(JSON.parse(r.stdout).data, "HI!!!");
 });
 
+test("missing required flag -> exit 2 before hitting the server", () => {
+  const r = cli(["demo", "echo"]);
+  assert.equal(r.status, 2);
+  const err = JSON.parse(r.stderr);
+  assert.equal(err.error.code, "INVALID_ARGUMENT");
+  assert.match(err.error.message, /missing required parameter: message/);
+  assert.match(err.error.hint, /--message/);
+});
+
+test("required complex param satisfied via --input is accepted", () => {
+  const r = cli(["demo", "complex", "--input", "{\"spec\":{\"a\":1}}"]);
+  assert.equal(r.status, 0, r.stderr);
+  const r2 = cli(["demo", "complex"]);
+  assert.equal(r2.status, 2);
+  assert.match(r2.stderr, /spec \(via --input\)/);
+});
+
 test("unknown tool -> exit 12 NOT_FOUND", () => {
   const r = cli(["demo", "nope"]);
   assert.equal(r.status, 12);
