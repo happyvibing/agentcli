@@ -6,8 +6,20 @@ import net from "node:net";
 import { readToolsCache, writeToolsCache } from "./config.js";
 import { errors, reviveError, AgentCliError } from "./errors.js";
 import { socketPath } from "./daemon/paths.js";
-import type { AgentCliConfig, ServerSpec, McpTool, ListToolsResultEnvelope, CallToolResultEnvelope, DaemonResponse } from "./types.js";
+import type { AgentCliConfig, ServerSpec, ToolDef, DaemonResponse } from "./types.js";
 import pkg from "../package.json" with { type: "json" };
+
+// MCP-side result envelopes (the neutral Backend contract lives in backend/types.ts).
+export interface ListToolsResultEnvelope {
+  tools: ToolDef[];
+  cached: boolean;
+  via: "daemon" | "direct";
+}
+
+export interface CallToolResultEnvelope {
+  result: unknown;
+  via: "daemon" | "direct";
+}
 
 const CLIENT_INFO = { name: "agentcli", version: pkg.version };
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
@@ -32,8 +44,6 @@ export function timeoutFromEnv(): number {
 // us accept servers speaking the newer spec. Core methods (initialize /
 // tools/list / tools/call) are wire-stable across these versions.
 // Override with AGENTCLI_PROTOCOL_VERSIONS (comma-separated). Dedup-safe once
-// the SDK ships these versions itself.
-
 let sdkPromise: Promise<{
   Client: typeof import("@modelcontextprotocol/sdk/client/index.js").Client;
   StdioClientTransport: typeof import("@modelcontextprotocol/sdk/client/stdio.js").StdioClientTransport;
@@ -97,6 +107,9 @@ type Transport = InstanceType<typeof import("@modelcontextprotocol/sdk/client/st
 
 export async function createTransport(spec: ServerSpec): Promise<Transport> {
   const { StdioClientTransport, StreamableHTTPClientTransport } = await sdk();
+  if (spec.type === "openapi") {
+    throw errors.invalidArgument("an openapi server spec reached the MCP transport (this is a bug — openapi servers bypass MCP)");
+  }
   if (spec.type === "http") {
     return new StreamableHTTPClientTransport(new URL(spec.url), {
       requestInit: { headers: parseHeaders(spec.headers) },
@@ -238,7 +251,7 @@ export async function listTools(
   const spec = requireServer(cfg, serverName);
   if (daemonEnabled(daemon)) {
     try {
-      const r = (await daemonRequest("listTools", { server: serverName, refresh }, { timeoutMs: timeoutMs ?? 30000 })) as { tools: McpTool[]; cached: boolean };
+      const r = (await daemonRequest("listTools", { server: serverName, refresh }, { timeoutMs: timeoutMs ?? 30000 })) as { tools: ToolDef[]; cached: boolean };
       return { tools: r.tools || [], cached: !!r.cached, via: "daemon" };
     } catch (e) {
       if (!(e instanceof DaemonUnavailable) && !(e as DaemonUnavailable)?.unavailable) throw e;
@@ -251,7 +264,7 @@ export async function listTools(
   try {
     const tools = await withClient(spec, serverName, async (client: McpClient) => {
       const res = await client.listTools(undefined, { timeout: timeoutMs });
-      return (res.tools as McpTool[]) || [];
+      return (res.tools as ToolDef[]) || [];
     }, timeoutMs);
     writeToolsCache(serverName, tools);
     return { tools, cached: false, via: "direct" };

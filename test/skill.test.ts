@@ -27,6 +27,12 @@ test("skill teaches the core loop commands", () => {
   assert.match(raw, /<tool> -h|--help/);
 });
 
+test("skill teaches OpenAPI registration alongside MCP", () => {
+  const raw = fs.readFileSync(SKILL, "utf8");
+  assert.match(raw, /--openapi/);
+  assert.match(raw, /\$\{ENV_VAR\}/);
+});
+
 test("skill documents the escape hatch and flags", () => {
   const raw = fs.readFileSync(SKILL, "utf8");
   assert.match(raw, /--input/);

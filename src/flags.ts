@@ -3,7 +3,7 @@
 // --input accepts inline JSON, @file, or - (stdin). Flags override --input keys.
 import fs from "node:fs";
 import { errors } from "./errors.js";
-import type { ToolInputSchema, ToolPropertySchema, FlagPlan, FlagSpec, McpTool } from "./types.js";
+import type { ToolInputSchema, ToolPropertySchema, FlagPlan, FlagSpec, ToolDef } from "./types.js";
 
 const CONTROL_FLAGS = new Set(["input", "output", "schema", "refresh", "help", "timeout-ms", "no-daemon"]);
 
@@ -180,7 +180,7 @@ export function validateRequired(plan: FlagPlan, args: Record<string, unknown>):
   );
 }
 
-export function renderToolHelp(serverName: string, tool: McpTool): string {
+export function renderToolHelp(serverName: string, tool: ToolDef): string {
   const plan = buildFlagPlan(tool.inputSchema);
   const lines: string[] = [];
   lines.push(serverName + " " + tool.name);

@@ -1,0 +1,61 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Open-Meteo Weather",
+    "version": "1.0"
+  },
+  "servers": [
+    {
+      "url": "https://api.open-meteo.com"
+    }
+  ],
+  "tags": [
+    {
+      "name": "forecast"
+    }
+  ],
+  "paths": {
+    "/v1/forecast": {
+      "get": {
+        "tags": [
+          "forecast"
+        ],
+        "summary": "Get current & hourly weather for a location",
+        "operationId": "getForecast",
+        "parameters": [
+          {
+            "name": "latitude",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number"
+            },
+            "description": "Latitude, e.g. 39.9"
+          },
+          {
+            "name": "longitude",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number"
+            },
+            "description": "Longitude, e.g. 116.4"
+          },
+          {
+            "name": "current",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma list: temperature_2m,wind_speed_10m"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    }
+  }
+}
