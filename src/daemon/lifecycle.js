@@ -14,7 +14,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function requireUnix() {
   if (process.platform === "win32") {
-    throw errors.usage("daemon mode requires unix sockets and is not supported on Windows yet", "calls still work without the daemon (direct mode)");
+    throw errors.invalidArgument("daemon mode requires unix sockets and is not supported on Windows yet", "calls still work without the daemon (direct mode)");
   }
 }
 

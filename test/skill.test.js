@@ -36,7 +36,7 @@ test("skill documents the escape hatch and flags", () => {
 
 test("skill documents all implemented exit codes", () => {
   const raw = fs.readFileSync(SKILL, "utf8");
-  for (const code of [0, 1, 2, 10, 12, 13]) {
+  for (const code of [0, 1, 2, 3, 4, 5, 6]) {
     assert.match(raw, new RegExp("\\b" + code + "\\b.*\\|"), "exit code " + code + " missing from skill");
   }
 });

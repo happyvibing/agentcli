@@ -67,11 +67,12 @@ Flags override `--input` keys, so combining them is safe.
 | Code | Meaning | What to do |
 |---|---|---|
 | 0 | success | parse stdout JSON |
-| 1 | tool/execution failure | read stderr, adjust input or report |
-| 2 | invalid arguments | re-read `--help`, fix flags |
-| 10 | auth required | tell the user to authenticate; do not retry blindly |
-| 12 | server/tool not found | re-run `<server> --help`; the error may suggest similar tools |
-| 13 | timeout | retry with a larger `--timeout-ms`, or check connectivity |
+| 1 | tool execution failure | the tool ran and reported an error — read stderr `error.message` |
+| 2 | caller error (bad flags/input, unknown server or tool) | re-read `--help`; for a stale tool list add `--refresh` |
+| 3 | auth required | tell the user to authenticate; do not retry blindly |
+| 4 | timeout | retry, optionally raise `--timeout-ms` |
+| 5 | connection failed | check server config/env or `agentcli daemon` state; not a blind retry |
+| 6 | internal bug | agentcli broke — report it, do not retry |
 
 ## Composability
 

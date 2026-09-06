@@ -123,23 +123,23 @@ test("required complex param satisfied via --input is accepted", () => {
   assert.match(r2.stderr, /spec \(via --input\)/);
 });
 
-test("unknown tool -> exit 12 NOT_FOUND", () => {
+test("unknown tool -> exit 2 NOT_FOUND", () => {
   const r = cli(["demo", "nope"]);
-  assert.equal(r.status, 12);
+  assert.equal(r.status, 2);
   const err = JSON.parse(r.stderr);
   assert.equal(err.error.code, "NOT_FOUND");
   assert.match(err.error.hint, /agentcli demo --help/);
 });
 
-test("unknown server -> exit 12 NOT_FOUND", () => {
+test("unknown server -> exit 2 NOT_FOUND", () => {
   const r = cli(["ghost", "whatever"]);
-  assert.equal(r.status, 12);
+  assert.equal(r.status, 2);
   assert.equal(JSON.parse(r.stderr).error.code, "NOT_FOUND");
 });
 
 test("typo in server name suggests the closest configured server", () => {
   const r = cli(["demoa", "whatever"]);
-  assert.equal(r.status, 12);
+  assert.equal(r.status, 2);
   const err = JSON.parse(r.stderr);
   assert.match(err.error.hint, /Did you mean: demo/);
 });
@@ -222,9 +222,9 @@ test("--help renders generated usage (tool and server level)", () => {
   assert.match(srv.stdout, /complex/);
 });
 
-test("timeout -> exit 13 TIMEOUT", () => {
+test("timeout -> exit 4 TIMEOUT", () => {
   const r = cli(["demo", "slow", "--ms", "5000"], { AGENTCLI_TIMEOUT_MS: "400" });
-  assert.equal(r.status, 13, r.stderr);
+  assert.equal(r.status, 4, r.stderr);
   assert.equal(JSON.parse(r.stderr).error.code, "TIMEOUT");
 });
 

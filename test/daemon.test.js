@@ -78,7 +78,7 @@ test("tool errors keep their exit codes through the daemon", () => {
   assert.equal(JSON.parse(r.stderr).error.code, "EXECUTION_ERROR");
 
   const nf = cli(["demo", "nope"]);
-  assert.equal(nf.status, 12);
+  assert.equal(nf.status, 2);
   assert.equal(JSON.parse(nf.stderr).error.code, "NOT_FOUND");
 });
 

@@ -21,10 +21,10 @@ export function loadConfig() {
   try {
     cfg = JSON.parse(fs.readFileSync(p, "utf8"));
   } catch (e) {
-    throw errors.usage("config file is not valid JSON: " + p, "Fix or remove the file: " + e.message);
+    throw errors.invalidArgument("config file is not valid JSON: " + p, "Fix or remove the file: " + e.message);
   }
   if (!cfg || typeof cfg !== "object" || Array.isArray(cfg)) {
-    throw errors.usage("config file must contain a JSON object: " + p);
+    throw errors.invalidArgument("config file must contain a JSON object: " + p);
   }
   cfg.version = 1;
   cfg.servers ||= {};

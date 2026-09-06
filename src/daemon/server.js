@@ -152,7 +152,7 @@ async function handleLine(state, sock, line) {
   try {
     req = JSON.parse(line);
   } catch {
-    sock.write(JSON.stringify({ id: null, ok: false, error: serializeError(errors.usage("invalid daemon request: not JSON")) }) + "\n");
+    sock.write(JSON.stringify({ id: null, ok: false, error: serializeError(errors.invalidArgument("invalid daemon request: not JSON")) }) + "\n");
     return;
   }
   const { id, op } = req;
@@ -177,7 +177,7 @@ async function handleLine(state, sock, line) {
         await state.stop("requested");
         return;
       default:
-        throw errors.usage('unknown daemon op "' + op + '"');
+        throw errors.invalidArgument('unknown daemon op "' + op + '"');
     }
     sock.write(JSON.stringify({ id, ok: true, result }) + "\n");
   } catch (e) {

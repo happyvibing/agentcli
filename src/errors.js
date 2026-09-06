@@ -1,12 +1,15 @@
 // Error taxonomy + exit-code protocol (see README "Output protocol").
+// Exit codes are RECOVERY CLASSES, dense 0..6: 0 ok | 1 tool failed |
+// 2 caller fixable | 3 auth | 4 timeout | 5 connect | 6 internal bug.
+// Precise diagnosis lives in the stderr JSON `error.code` string.
 export const EXIT = {
-  OK: 0,               // success
-  EXECUTION: 1,        // tool execution failure / transport failure
-  INVALID_ARGUMENT: 2, // bad flags, bad --input, bad usage
-  AUTH: 10,            // authentication required
-  PERMISSION: 11,      // permission denied
-  NOT_FOUND: 12,       // server or tool not found
-  TIMEOUT: 13,         // request timed out
+  OK: 0,         // success
+  EXECUTION: 1,   // the tool ran and reported an error
+  USAGE: 2,       // caller-side fix: bad flags, bad --input, unknown server/tool/command
+  AUTH: 3,        // credentials missing or rejected
+  TIMEOUT: 4,     // request timed out (retryable)
+  CONNECT: 5,     // transport / server startup failure
+  INTERNAL: 6,    // agentcli bug — report, do not retry
 };
 
 export class AgentCliError extends Error {
@@ -22,17 +25,15 @@ export class AgentCliError extends Error {
 
 export const errors = {
   invalidArgument: (message, hint) =>
-    new AgentCliError("INVALID_ARGUMENT", message, { exitCode: EXIT.INVALID_ARGUMENT, hint }),
+    new AgentCliError("INVALID_ARGUMENT", message, { exitCode: EXIT.USAGE, hint }),
   notFound: (message, hint) =>
-    new AgentCliError("NOT_FOUND", message, { exitCode: EXIT.NOT_FOUND, hint }),
+    new AgentCliError("NOT_FOUND", message, { exitCode: EXIT.USAGE, hint }),
   execution: (message, details) =>
     new AgentCliError("EXECUTION_ERROR", message, { exitCode: EXIT.EXECUTION, details }),
   connect: (message, details) =>
-    new AgentCliError("CONNECT_FAILED", message, { exitCode: EXIT.EXECUTION, details }),
+    new AgentCliError("CONNECT_FAILED", message, { exitCode: EXIT.CONNECT, details }),
   auth: (message) => new AgentCliError("AUTH_REQUIRED", message, { exitCode: EXIT.AUTH }),
   timeout: (message) => new AgentCliError("TIMEOUT", message, { exitCode: EXIT.TIMEOUT }),
-  usage: (message, hint) =>
-    new AgentCliError("USAGE", message, { exitCode: EXIT.INVALID_ARGUMENT, hint }),
 };
 
 // Wire format for daemon <-> CLI error transport.
@@ -40,7 +41,7 @@ export function serializeError(e) {
   if (e instanceof AgentCliError) {
     return { code: e.code, message: e.message, hint: e.hint, details: e.details, exitCode: e.exitCode };
   }
-  return { code: "INTERNAL", message: String((e && e.message) || e), exitCode: EXIT.EXECUTION };
+  return { code: "INTERNAL", message: String((e && e.message) || e), exitCode: EXIT.INTERNAL };
 }
 
 export function reviveError(raw) {

@@ -29,15 +29,15 @@ function exitWithError(e) {
     const isUnknownCommand = e.code === "commander.unknownCommand";
     printError(
       new AgentCliError(isUnknownCommand ? "NOT_FOUND" : "INVALID_ARGUMENT", e.message.replace(/^error:\s*/, ""), {
-        exitCode: isUnknownCommand ? EXIT.NOT_FOUND : EXIT.INVALID_ARGUMENT,
+        exitCode: EXIT.USAGE,
         hint: "agentcli --help",
       })
     );
-    process.exitCode = isUnknownCommand ? EXIT.NOT_FOUND : EXIT.INVALID_ARGUMENT;
+    process.exitCode = EXIT.USAGE;
     return;
   }
-  printError(new AgentCliError("INTERNAL", (e && e.stack) || String(e)));
-  process.exitCode = EXIT.EXECUTION;
+  printError(new AgentCliError("INTERNAL", (e && e.stack) || String(e), { exitCode: EXIT.INTERNAL }));
+  process.exitCode = EXIT.INTERNAL;
 }
 
 function parseKeyValueList(list, flagName, expected, sep = "=") {
@@ -57,7 +57,7 @@ function stripGlobalFlags(argv) {
     const a = argv[i];
     if (a === "--config" || a === "-c") {
       configPath = argv[++i];
-      if (configPath === undefined) throw errors.usage("--config requires a path");
+      if (configPath === undefined) throw errors.invalidArgument("--config requires a path");
       continue;
     }
     if (a.startsWith("--config=")) {
@@ -123,11 +123,11 @@ function buildBuiltins(cfg) {
     .action(async (name, cmd, opts) => {
       const current = loadConfig();
       if (opts.url) {
-        if (cmd && cmd.length) throw errors.usage("--url and a command are mutually exclusive");
+        if (cmd && cmd.length) throw errors.invalidArgument("--url and a command are mutually exclusive");
         addServer(current, name, { type: "http", url: opts.url, headers: parseKeyValueList(opts.header, "header", '"Name: value"', ":") });
       } else {
         if (!cmd || cmd.length === 0) {
-          throw errors.usage(
+          throw errors.invalidArgument(
             "a stdio server needs a command",
             "agentcli server add <name> -- <command...> [args...]   |   agentcli server add <name> --url <http-url>"
           );

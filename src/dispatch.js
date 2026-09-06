@@ -75,7 +75,7 @@ export async function runServerCommand(cfg, serverName, tail) {
 
   const toolName = tail[0];
   if (toolName.startsWith("-")) {
-    throw errors.usage('expected a tool name after "' + serverName + '", got "' + toolName + '"', "agentcli " + serverName + " --help lists tools");
+    throw errors.invalidArgument('expected a tool name after "' + serverName + '", got "' + toolName + '"', "agentcli " + serverName + " --help lists tools");
   }
   const rest = tail.slice(1);
 
