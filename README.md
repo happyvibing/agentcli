@@ -13,7 +13,7 @@ Every MCP tool becomes a CLI command the first time you type it. Flags are compi
 
 ## Why
 
-Agents that register every MCP tool upfront pay for it in context: hundreds of schemas loaded at startup, most never used. A CLI flips the model to **progressive disclosure**: discover with `--help`, drill down only as far as needed. stdout/stderr separation and a typed exit-code protocol keep the whole thing machine-consumable.
+Agents that register every MCP tool upfront pay for it in context: hundreds of schemas loaded at startup, most never used. A CLI flips the model to **progressive disclosure**: discover with `--help`, drill down only as far as needed. stdout/stderr separation, a binary exit code (0/1), and self-describing JSON errors keep the whole thing machine-consumable.
 
 ## Install
 

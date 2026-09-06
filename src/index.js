@@ -17,7 +17,7 @@ const KNOWN_BUILTINS = new Set(["server", "daemon", "help", "version"]);
 function exitWithError(e) {
   if (e instanceof AgentCliError) {
     printError(e);
-    process.exitCode = e.exitCode;
+    process.exitCode = EXIT.FAILURE;
     return;
   }
   if (e && typeof e.code === "string" && e.code.startsWith("commander.")) {
@@ -29,15 +29,15 @@ function exitWithError(e) {
     const isUnknownCommand = e.code === "commander.unknownCommand";
     printError(
       new AgentCliError(isUnknownCommand ? "NOT_FOUND" : "INVALID_ARGUMENT", e.message.replace(/^error:\s*/, ""), {
-        exitCode: EXIT.USAGE,
+        hint: "agentcli --help",
         hint: "agentcli --help",
       })
     );
-    process.exitCode = EXIT.USAGE;
+    process.exitCode = EXIT.FAILURE;
     return;
   }
-  printError(new AgentCliError("INTERNAL", (e && e.stack) || String(e), { exitCode: EXIT.INTERNAL }));
-  process.exitCode = EXIT.INTERNAL;
+  printError(new AgentCliError("INTERNAL", (e && e.stack) || String(e)));
+  process.exitCode = EXIT.FAILURE;
 }
 
 function parseKeyValueList(list, flagName, expected, sep = "=") {

@@ -34,10 +34,12 @@ test("skill documents the escape hatch and flags", () => {
   assert.match(raw, /--refresh/);
 });
 
-test("skill documents all implemented exit codes", () => {
+test("skill documents the binary exit protocol and error codes", () => {
   const raw = fs.readFileSync(SKILL, "utf8");
-  for (const code of [0, 1, 2, 3, 4, 5, 6]) {
-    assert.match(raw, new RegExp("\\b" + code + "\\b.*\\|"), "exit code " + code + " missing from skill");
+  assert.match(raw, /0 = success/);
+  assert.match(raw, /1 = failure/);
+  for (const code of ["INVALID_ARGUMENT", "NOT_FOUND", "AUTH_REQUIRED", "TIMEOUT", "CONNECT_FAILED", "EXECUTION_ERROR", "INTERNAL"]) {
+    assert.ok(raw.includes(code), code + " missing from skill");
   }
 });
 

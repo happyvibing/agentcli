@@ -71,30 +71,30 @@ test("tool call with --flag=value and boolean flag", () => {
   assert.equal(JSON.parse(r.stdout).data, "HEY");
 });
 
-test("invalid integer value -> exit 2 INVALID_ARGUMENT", () => {
+test("invalid integer value -> exits 1 INVALID_ARGUMENT", () => {
   const r = cli(["demo", "echo", "--message", "x", "--times", "bad"]);
-  assert.equal(r.status, 2);
+  assert.equal(r.status, 1);
   const err = JSON.parse(r.stderr);
   assert.equal(err.error.code, "INVALID_ARGUMENT");
 });
 
-test("unknown flag -> exit 2 with hint listing flags", () => {
+test("unknown flag -> exits 1 with hint listing flags", () => {
   const r = cli(["demo", "echo", "--nope", "1"]);
-  assert.equal(r.status, 2);
+  assert.equal(r.status, 1);
   const err = JSON.parse(r.stderr);
   assert.equal(err.error.code, "INVALID_ARGUMENT");
   assert.match(err.error.hint, /--message/);
 });
 
-test("positional argument -> exit 2", () => {
+test("positional argument -> exits 1", () => {
   const r = cli(["demo", "echo", "positional"]);
-  assert.equal(r.status, 2);
+  assert.equal(r.status, 1);
   assert.equal(JSON.parse(r.stderr).error.code, "INVALID_ARGUMENT");
 });
 
-test("enum rejects invalid choice -> exit 2 with allowed values", () => {
+test("enum rejects invalid choice -> exits 1 with allowed values", () => {
   const r = cli(["demo", "echo", "--message", "hi", "--mode", "loud"]);
-  assert.equal(r.status, 2);
+  assert.equal(r.status, 1);
   const err = JSON.parse(r.stderr);
   assert.equal(err.error.code, "INVALID_ARGUMENT");
   assert.match(err.error.hint, /Allowed values: plain, shout/);
@@ -106,9 +106,9 @@ test("enum accepts a valid choice", () => {
   assert.equal(JSON.parse(r.stdout).data, "HI!!!");
 });
 
-test("missing required flag -> exit 2 before hitting the server", () => {
+test("missing required flag -> exits 1 before hitting the server", () => {
   const r = cli(["demo", "echo"]);
-  assert.equal(r.status, 2);
+  assert.equal(r.status, 1);
   const err = JSON.parse(r.stderr);
   assert.equal(err.error.code, "INVALID_ARGUMENT");
   assert.match(err.error.message, /missing required parameter: message/);
@@ -119,27 +119,27 @@ test("required complex param satisfied via --input is accepted", () => {
   const r = cli(["demo", "complex", "--input", "{\"spec\":{\"a\":1}}"]);
   assert.equal(r.status, 0, r.stderr);
   const r2 = cli(["demo", "complex"]);
-  assert.equal(r2.status, 2);
+  assert.equal(r2.status, 1);
   assert.match(r2.stderr, /spec \(via --input\)/);
 });
 
-test("unknown tool -> exit 2 NOT_FOUND", () => {
+test("unknown tool -> exits 1 NOT_FOUND", () => {
   const r = cli(["demo", "nope"]);
-  assert.equal(r.status, 2);
+  assert.equal(r.status, 1);
   const err = JSON.parse(r.stderr);
   assert.equal(err.error.code, "NOT_FOUND");
   assert.match(err.error.hint, /agentcli demo --help/);
 });
 
-test("unknown server -> exit 2 NOT_FOUND", () => {
+test("unknown server -> exits 1 NOT_FOUND", () => {
   const r = cli(["ghost", "whatever"]);
-  assert.equal(r.status, 2);
+  assert.equal(r.status, 1);
   assert.equal(JSON.parse(r.stderr).error.code, "NOT_FOUND");
 });
 
 test("typo in server name suggests the closest configured server", () => {
   const r = cli(["demoa", "whatever"]);
-  assert.equal(r.status, 2);
+  assert.equal(r.status, 1);
   const err = JSON.parse(r.stderr);
   assert.match(err.error.hint, /Did you mean: demo/);
 });
@@ -165,7 +165,7 @@ test("server -h lists configured servers", () => {
 
 test("object parameter cannot be a flag; --input works and flags merge", () => {
   const bad = cli(["demo", "complex", "--spec", "x"]);
-  assert.equal(bad.status, 2);
+  assert.equal(bad.status, 1);
   assert.match(bad.stderr, /--input/);
 
   const ok = cli(["demo", "complex", "--input", '{"spec":{"a":1}}']);
@@ -222,9 +222,9 @@ test("--help renders generated usage (tool and server level)", () => {
   assert.match(srv.stdout, /complex/);
 });
 
-test("timeout -> exit 4 TIMEOUT", () => {
+test("timeout -> exits 1 TIMEOUT", () => {
   const r = cli(["demo", "slow", "--ms", "5000"], { AGENTCLI_TIMEOUT_MS: "400" });
-  assert.equal(r.status, 4, r.stderr);
+  assert.equal(r.status, 1, r.stderr);
   assert.equal(JSON.parse(r.stderr).error.code, "TIMEOUT");
 });
 
@@ -237,13 +237,13 @@ test("tools cache file is written and reused", () => {
 
 test("reserved names are rejected", () => {
   const r = cli(["server", "add", "server", "--", process.execPath, FIXTURE]);
-  assert.equal(r.status, 2);
+  assert.equal(r.status, 1);
   assert.match(r.stderr, /reserved/);
 });
 
 test("duplicate server is rejected", () => {
   const r = cli(["server", "add", "demo", "--", process.execPath, FIXTURE]);
-  assert.equal(r.status, 2);
+  assert.equal(r.status, 1);
   assert.match(r.stderr, /already exists/);
 });
 

@@ -57,22 +57,20 @@ Flags override `--input` keys, so combining them is safe.
 - `--flag=value` form works everywhere; use it when a value itself starts with `--`.
 - Arrays: repeat the flag — `--tag a --tag b`.
 - Booleans: presence means true (`--dry-run`), or explicit `--dry-run=false` / `--dry-run false`.
-- Numbers are validated; enums reject invalid choices with exit code 2 and list allowed values.
+- Numbers are validated; enums reject invalid choices and list allowed values.
 - Some tools document allowed values in their description text instead of a real enum
   (`Available values: ...`). Those are NOT validated client-side — read the description
   carefully and copy the literal value (e.g. `oneMonth`, not "one month").
 
-## Exit codes
+## Errors
 
-| Code | Meaning | What to do |
-|---|---|---|
-| 0 | success | parse stdout JSON |
-| 1 | tool execution failure | the tool ran and reported an error — read stderr `error.message` |
-| 2 | caller error (bad flags/input, unknown server or tool) | re-read `--help`; for a stale tool list add `--refresh` |
-| 3 | auth required | tell the user to authenticate; do not retry blindly |
-| 4 | timeout | retry, optionally raise `--timeout-ms` |
-| 5 | connection failed | check server config/env or `agentcli daemon` state; not a blind retry |
-| 6 | internal bug | agentcli broke — report it, do not retry |
+Exit code is binary: 0 = success (parse stdout), 1 = failure (read stderr).
+Every failure prints one self-describing JSON line to stderr — no lookup table needed:
+```
+{"ok":false,"error":{"code":"CONNECT_FAILED","message":"github: spawn failed","hint":"check server config/env or `agentcli daemon` state; do not blind-retry"}}
+```
+- `code` names the class: INVALID_ARGUMENT | NOT_FOUND | AUTH_REQUIRED | TIMEOUT | CONNECT_FAILED | EXECUTION_ERROR | INTERNAL
+- `message` is the diagnosis; `hint` (when present) is the recommended next action — follow it.
 
 ## Composability
 
