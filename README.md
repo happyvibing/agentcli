@@ -70,8 +70,8 @@ Global:
 
 ## Agent Skill
 
-`skills/agentcli/SKILL.md` teaches an agent this runtime — the discover → inspect → execute → observe loop, exit codes, and error recovery. Install it:
+`skills/agentcli/SKILL.md` teaches an agent this runtime — the discover → inspect → execute → observe loop, exit codes, and error recovery. Install it with the skills CLI (also listed on [skills.sh](https://skills.sh)):
 
 ```bash
-mkdir -p ~/.agents/skills/agentcli && cp skills/agentcli/SKILL.md ~/.agents/skills/agentcli/
+npx skills add happyvibing/agentcli@agentcli -g
 ```

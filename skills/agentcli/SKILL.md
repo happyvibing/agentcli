@@ -1,6 +1,9 @@
 ---
 name: agentcli
 description: Use the agentcli runtime to discover and execute MCP server tools from the command line. Use this skill whenever the user asks to work with external systems — GitHub, Feishu/Lark, Notion, Slack, databases, k8s, internal APIs — through MCP servers, or whenever a task involves finding or calling tools via agentcli. Triggers include mentions of agentcli, MCP servers/tools, or tasks like 'search GitHub issues', 'send a Feishu message', 'create a Notion page' when an MCP server may provide the capability.
+license: MIT
+metadata:
+  compatibility: [claude-code, codex, cursor, opencode]
 ---
 
 # AgentCLI
