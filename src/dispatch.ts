@@ -5,22 +5,36 @@ import { suggest } from "./fuzzy.js";
 import { buildFlagPlan, parseToolArgs, readInputJson, mergeArgs, renderToolHelp, validateRequired } from "./flags.js";
 import { errors, EXIT } from "./errors.js";
 import { printJson } from "./jsonout.js";
+import type { AgentCliConfig, McpTool } from "./types.js";
 
-function firstLine(text) {
+function firstLine(text: string | undefined): string {
   return String(text || "").split("\n")[0];
 }
 
-function extractText(result) {
+interface McpContentItem {
+  type: string;
+  text?: string;
+  [key: string]: unknown;
+}
+
+interface McpCallToolResult {
+  content?: McpContentItem[];
+  isError?: boolean;
+  structuredContent?: unknown;
+  [key: string]: unknown;
+}
+
+function extractText(result: McpCallToolResult): string {
   return (result.content || [])
     .filter((c) => c && c.type === "text")
-    .map((c) => c.text)
+    .map((c) => c.text || "")
     .join("\n");
 }
 
 // Some servers return JSON.stringify(JSON.stringify(payload)) — text content that
 // is still a JSON string after one parse. Unwrap while it stays a string (bounded).
-function parseMaybeEncoded(text, maxDepth = 3) {
-  let v = text;
+function parseMaybeEncoded(text: string, maxDepth = 3): unknown {
+  let v: unknown = text;
   for (let i = 0; typeof v === "string" && i <= maxDepth; i++) {
     try {
       v = JSON.parse(v);
@@ -36,25 +50,27 @@ function parseMaybeEncoded(text, maxDepth = 3) {
 //   else if all items are text: parsed JSON (double-encoded strings unwrapped),
 //   joined text when it is not JSON;
 //   else pass the content items through.
-function extractData(result) {
+function extractData(result: McpCallToolResult): unknown {
   if (result.structuredContent !== undefined) return result.structuredContent;
   const items = result.content || [];
   if (items.length === 0) return null;
   if (items.every((c) => c && c.type === "text")) {
-    return parseMaybeEncoded(items.map((c) => c.text).join("\n"));
+    return parseMaybeEncoded(items.map((c) => c.text || "").join("\n"));
   }
   return { content: items };
 }
 
-function toolNotFound(serverName, toolName, tools) {
+function toolNotFound(serverName: string, toolName: string, tools: McpTool[]): AgentCliError {
   const similar = suggest(toolName, tools.map((t) => t.name)).slice(0, 5);
-  const hints = [];
+  const hints: string[] = [];
   if (similar.length) hints.push("Similar tools: " + similar.join(", "));
   hints.push("List tools: agentcli " + serverName + " --help");
   return errors.notFound('tool "' + toolName + '" not found on server "' + serverName + '"', hints.join(" | "));
 }
 
-async function printServerHelp(cfg, serverName, refresh) {
+import type { AgentCliError } from "./errors.js";
+
+async function printServerHelp(cfg: AgentCliConfig, serverName: string, refresh: boolean): Promise<number> {
   const { tools } = await listTools(cfg, serverName, { refresh });
   const lines = [serverName + " — MCP server (" + tools.length + " tools)", "", "Usage:", "  agentcli " + serverName + " <tool> [flags]", "", "Tools:"];
   for (const t of tools) {
@@ -67,7 +83,7 @@ async function printServerHelp(cfg, serverName, refresh) {
   return EXIT.OK;
 }
 
-export async function runServerCommand(cfg, serverName, tail) {
+export async function runServerCommand(cfg: AgentCliConfig, serverName: string, tail: string[]): Promise<number> {
   // 1. server-level help: `agentcli <server>` or `agentcli <server> --help`
   if (tail.length === 0 || tail[0] === "--help" || tail[0] === "-h") {
     return printServerHelp(cfg, serverName, tail.includes("--refresh"));
@@ -101,10 +117,10 @@ export async function runServerCommand(cfg, serverName, tail) {
   const { args: flagArgs, opts } = parseToolArgs(plan, rest);
   let args = flagArgs;
   if (opts.input !== undefined) {
-    args = mergeArgs(readInputJson(opts.input), flagArgs);
+    args = mergeArgs(readInputJson(opts.input as string), flagArgs);
   }
   validateRequired(plan, args);
-  const output = opts.output || "json";
+  const output = (opts.output as string) || "json";
   if (output !== "json" && output !== "text") {
     throw errors.invalidArgument('invalid --output "' + output + '"', "Supported: json, text");
   }
@@ -118,16 +134,18 @@ export async function runServerCommand(cfg, serverName, tail) {
   const started = Date.now();
   const { result, via } = await callTool(cfg, serverName, toolName, args, { timeoutMs, daemon: !noDaemon });
 
-  if (result.isError) {
-    throw errors.execution(extractText(result) || "tool reported an error without a message");
+  const mcpResult = result as McpCallToolResult;
+
+  if (mcpResult.isError) {
+    throw errors.execution(extractText(mcpResult) || "tool reported an error without a message");
   }
 
   // 5. observe
   if (output === "text") {
-    const text = extractText(result);
+    const text = extractText(mcpResult);
     if (text === "") {
       // Non-text content items: fall back to the machine-readable form.
-      process.stdout.write(JSON.stringify(extractData(result)) + "\n");
+      process.stdout.write(JSON.stringify(extractData(mcpResult)) + "\n");
     } else {
       // Double-encoded JSON pretty-prints; genuine prose passes through raw.
       const v = parseMaybeEncoded(text);
@@ -140,7 +158,7 @@ export async function runServerCommand(cfg, serverName, tail) {
     ok: true,
     server: serverName,
     tool: toolName,
-    data: extractData(result),
+    data: extractData(mcpResult),
     meta: { durationMs: Date.now() - started, schemaCached: cached, via },
   });
   return EXIT.OK;

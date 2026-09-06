@@ -1,4 +1,4 @@
-// Detached daemon entrypoint: node src/daemon/child.js
+// Detached daemon entrypoint: node dist/src/daemon/child.js
 import { runDaemon } from "./server.js";
 
 runDaemon()
@@ -7,7 +7,8 @@ runDaemon()
     // otherwise resolved on shutdown
     process.exit(0);
   })
-  .catch((e) => {
-    process.stderr.write("agentcli daemon failed: " + String((e && e.stack) || e) + "\n");
+  .catch((e: unknown) => {
+    const err = e as Error;
+    process.stderr.write("agentcli daemon failed: " + String((err && err.stack) || e) + "\n");
     process.exit(1);
   });

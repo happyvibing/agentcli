@@ -18,10 +18,10 @@ Agents that register every MCP tool upfront pay for it in context: hundreds of s
 ## Install
 
 ```bash
-npm install -g @happyvibing/agentcli
+pnpm add -g @happyvibing/agentcli  # or: npm install -g @happyvibing/agentcli
 ```
 
-Requires Node >= 20. Or run from source: `git clone && npm install && npm link`.
+Requires Node >= 20.10. Or run from source: `git clone && pnpm install && pnpm build && pnpm link --global`.
 
 ## Quick start
 

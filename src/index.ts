@@ -7,6 +7,7 @@ import { runServerCommand } from "./dispatch.js";
 import { listTools } from "./client.js";
 import { startDaemon, stopDaemon, daemonStatus } from "./daemon/lifecycle.js";
 import { suggest } from "./fuzzy.js";
+import type { AgentCliConfig, ServerSpec, StdioServerSpec, HttpServerSpec } from "./types.js";
 
 const { version } = pkg;
 
@@ -14,34 +15,34 @@ const { version } = pkg;
 // server name is dispatched dynamically).
 const KNOWN_BUILTINS = new Set(["server", "daemon", "help", "version"]);
 
-function exitWithError(e) {
+function exitWithError(e: unknown): void {
   if (e instanceof AgentCliError) {
     printError(e);
     process.exitCode = EXIT.FAILURE;
     return;
   }
-  if (e && typeof e.code === "string" && e.code.startsWith("commander.")) {
+  const err = e as Error & { code?: string };
+  if (err && typeof err.code === "string" && err.code.startsWith("commander.")) {
     // help/version output has already been written by commander
-    if (e.code === "commander.help" || e.code === "commander.helpDisplayed" || e.code === "commander.version") {
+    if (err.code === "commander.help" || err.code === "commander.helpDisplayed" || err.code === "commander.version") {
       process.exitCode = EXIT.OK;
       return;
     }
-    const isUnknownCommand = e.code === "commander.unknownCommand";
+    const isUnknownCommand = err.code === "commander.unknownCommand";
     printError(
-      new AgentCliError(isUnknownCommand ? "NOT_FOUND" : "INVALID_ARGUMENT", e.message.replace(/^error:\s*/, ""), {
-        hint: "agentcli --help",
+      new AgentCliError(isUnknownCommand ? "NOT_FOUND" : "INVALID_ARGUMENT", err.message.replace(/^error:\s*/, ""), {
         hint: "agentcli --help",
       })
     );
     process.exitCode = EXIT.FAILURE;
     return;
   }
-  printError(new AgentCliError("INTERNAL", (e && e.stack) || String(e)));
+  printError(new AgentCliError("INTERNAL", (err && err.stack) || String(e)));
   process.exitCode = EXIT.FAILURE;
 }
 
-function parseKeyValueList(list, flagName, expected, sep = "=") {
-  const out = {};
+function parseKeyValueList(list: string[] | undefined, flagName: string, expected: string, sep = "="): Record<string, string> {
+  const out: Record<string, string> = {};
   for (const kv of list || []) {
     const idx = kv.indexOf(sep);
     if (idx <= 0) throw errors.invalidArgument("invalid --" + flagName + ' "' + kv + '"', "Expected " + expected);
@@ -50,9 +51,9 @@ function parseKeyValueList(list, flagName, expected, sep = "=") {
   return out;
 }
 
-function stripGlobalFlags(argv) {
-  let configPath;
-  const rest = [];
+function stripGlobalFlags(argv: string[]): { rest: string[]; configPath: string | undefined } {
+  let configPath: string | undefined;
+  const rest: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--config" || a === "-c") {
@@ -72,7 +73,7 @@ function stripGlobalFlags(argv) {
 // The dynamic `agentcli <server> <tool>` surface is invisible to commander's
 // generated help, so surface configured servers explicitly -- top-level help is
 // the discovery entry point for agents and humans alike.
-function serversHelpSection(cfg) {
+function serversHelpSection(cfg: AgentCliConfig): string {
   const entries = Object.entries(cfg.servers);
   if (entries.length === 0) {
     return [
@@ -83,7 +84,7 @@ function serversHelpSection(cfg) {
       "",
     ].join("\n");
   }
-  const lines = entries.map(([name, spec]) => {
+  const lines = entries.map(([name, spec]: [string, ServerSpec]) => {
     const detail = spec.type === "http" ? spec.url : [spec.command, ...(spec.args || [])].join(" ");
     return "  " + name.padEnd(16) + (spec.type === "http" ? "http - " : "stdio - ") + detail;
   });
@@ -96,7 +97,7 @@ function serversHelpSection(cfg) {
   ].join("\n");
 }
 
-function buildBuiltins(cfg) {
+function buildBuiltins(cfg: AgentCliConfig): Command {
   const program = new Command();
   program
     .name("agentcli")
@@ -120,11 +121,12 @@ function buildBuiltins(cfg) {
     .option("--header <name:value...>", "HTTP header sent on every request (repeatable)")
     .option("--env <key=value...>", "Extra env vars for a stdio server (repeatable)")
     .argument("[cmd...]", "stdio server command and args (after --)")
-    .action(async (name, cmd, opts) => {
+    .action(async (name: string, cmd: string[], opts: { url?: string; header?: string[]; env?: string[] }) => {
       const current = loadConfig();
       if (opts.url) {
         if (cmd && cmd.length) throw errors.invalidArgument("--url and a command are mutually exclusive");
-        addServer(current, name, { type: "http", url: opts.url, headers: parseKeyValueList(opts.header, "header", '"Name: value"', ":") });
+        const spec: HttpServerSpec = { type: "http", url: opts.url, headers: parseKeyValueList(opts.header, "header", '"Name: value"', ":") };
+        addServer(current, name, spec);
       } else {
         if (!cmd || cmd.length === 0) {
           throw errors.invalidArgument(
@@ -133,7 +135,8 @@ function buildBuiltins(cfg) {
           );
         }
         const [command, ...args] = cmd;
-        addServer(current, name, { type: "stdio", command, args, env: parseKeyValueList(opts.env, "env", "KEY=value") });
+        const spec: StdioServerSpec = { type: "stdio", command, args, env: parseKeyValueList(opts.env, "env", "KEY=value") };
+        addServer(current, name, spec);
       }
       printJson({ ok: true, server: name, config: process.env.AGENTCLI_CONFIG });
     });
@@ -142,13 +145,12 @@ function buildBuiltins(cfg) {
     .command("list")
     .description("List configured servers.")
     .option("-o, --output <fmt>", "json | text (default: json)")
-    .action((opts) => {
+    .action((opts: { output?: string }) => {
       const current = loadConfig();
-      const rows = Object.entries(current.servers).map(([name, spec]) => ({
-        name,
-        type: spec.type,
-        ...(spec.type === "http" ? { url: spec.url } : { command: [spec.command, ...(spec.args || [])].join(" ") }),
-      }));
+      const rows: Array<{ name: string; type: string; command?: string; url?: string }> = Object.entries(current.servers).map(([name, spec]: [string, ServerSpec]) => {
+        if (spec.type === "http") return { name, type: spec.type, url: spec.url };
+        return { name, type: spec.type, command: [spec.command, ...(spec.args || [])].join(" ") };
+      });
       if (opts.output === "text") {
         for (const r of rows) console.log(r.name.padEnd(16) + r.type.padEnd(8) + (r.command || r.url || ""));
         return;
@@ -159,7 +161,7 @@ function buildBuiltins(cfg) {
   server
     .command("remove <name>")
     .description("Remove a configured server.")
-    .action((name) => {
+    .action((name: string) => {
       removeServer(loadConfig(), name);
       printJson({ ok: true, removed: name });
     });
@@ -169,7 +171,7 @@ function buildBuiltins(cfg) {
     .description("List the tools a server exposes.")
     .option("--refresh", "Bypass the tools cache")
     .option("-o, --output <fmt>", "json | text (default: json)")
-    .action(async (name, opts) => {
+    .action(async (name: string, opts: { refresh?: boolean; output?: string }) => {
       const { tools } = await listTools(loadConfig(), name, { refresh: !!opts.refresh });
       if (opts.output === "text") {
         for (const t of tools) console.log(String(t.name).padEnd(28) + String(t.description || "").split("\n")[0]);
@@ -184,13 +186,13 @@ function buildBuiltins(cfg) {
   const daemon = program
     .command("daemon")
     .description("Manage the background daemon (persistent MCP connections, fast repeated calls).")
-    .action((opts, cmd) => cmd.help());
+    .action((_opts: unknown, cmd: Command) => cmd.help());
 
   daemon
     .command("start")
     .description("Start the daemon in the background (persists after this command exits).")
     .option("-f, --foreground", "Run in the foreground (logs to console; Ctrl-C stops it)")
-    .action(async (opts) => {
+    .action(async (opts: { foreground?: boolean }) => {
       const r = await startDaemon({ foreground: !!opts.foreground });
       printJson(r);
     });
@@ -220,7 +222,7 @@ function buildBuiltins(cfg) {
   return program;
 }
 
-export async function run(argv) {
+export async function run(argv: string[]): Promise<void> {
   try {
     const { rest, configPath } = stripGlobalFlags(argv);
     if (configPath) process.env.AGENTCLI_CONFIG = configPath;
@@ -246,7 +248,7 @@ export async function run(argv) {
     if (first && !first.startsWith("-") && !cfg.servers[first] && !KNOWN_BUILTINS.has(first)) {
       const names = Object.keys(cfg.servers);
       const near = suggest(first, names);
-      const hints = [];
+      const hints: string[] = [];
       if (near.length) hints.push("Did you mean: " + near.join(", ") + "?");
       hints.push(
         names.length

@@ -5,10 +5,19 @@
 export const EXIT = {
   OK: 0,
   FAILURE: 1,
-};
+} as const;
+
+export interface ErrorOptions {
+  hint?: string;
+  details?: unknown;
+}
 
 export class AgentCliError extends Error {
-  constructor(code, message, { hint, details } = {}) {
+  code: string;
+  hint?: string;
+  details?: unknown;
+
+  constructor(code: string, message: string, { hint, details }: ErrorOptions = {}) {
     super(message);
     this.name = "AgentCliError";
     this.code = code;
@@ -18,34 +27,42 @@ export class AgentCliError extends Error {
 }
 
 export const errors = {
-  invalidArgument: (message, hint) =>
+  invalidArgument: (message: string, hint?: string): AgentCliError =>
     new AgentCliError("INVALID_ARGUMENT", message, { hint }),
-  notFound: (message, hint) =>
+  notFound: (message: string, hint?: string): AgentCliError =>
     new AgentCliError("NOT_FOUND", message, { hint }),
-  execution: (message, details) =>
+  execution: (message: string, details?: unknown): AgentCliError =>
     new AgentCliError("EXECUTION_ERROR", message, { details }),
-  connect: (message, details) =>
+  connect: (message: string, details?: unknown): AgentCliError =>
     new AgentCliError("CONNECT_FAILED", message, {
       details,
       hint: "check server config/env or `agentcli daemon` state; do not blind-retry",
     }),
-  auth: (message) =>
+  auth: (message: string): AgentCliError =>
     new AgentCliError("AUTH_REQUIRED", message, {
       hint: "ask the user for credentials; do not retry with the same token",
     }),
-  timeout: (message) =>
+  timeout: (message: string): AgentCliError =>
     new AgentCliError("TIMEOUT", message, { hint: "retry, or raise --timeout-ms" }),
 };
 
 // Wire format for daemon <-> CLI error transport.
-export function serializeError(e) {
+export interface SerializedError {
+  code: string;
+  message: string;
+  hint?: string;
+  details?: unknown;
+}
+
+export function serializeError(e: unknown): SerializedError {
   if (e instanceof AgentCliError) {
     return { code: e.code, message: e.message, hint: e.hint, details: e.details };
   }
-  return { code: "INTERNAL", message: String((e && e.message) || e), hint: "agentcli bug — please report it" };
+  const err = e as Error;
+  return { code: "INTERNAL", message: String((err && err.message) || e), hint: "agentcli bug — please report it" };
 }
 
-export function reviveError(raw) {
+export function reviveError(raw: SerializedError): AgentCliError {
   if (raw && typeof raw.code === "string") {
     return new AgentCliError(raw.code, raw.message || "unknown error", {
       hint: raw.hint,

@@ -2,37 +2,38 @@
 // per-call spawn + handshake. Newline-delimited JSON over a unix socket.
 import net from "node:net";
 import fs from "node:fs";
-import path from "node:path";
 import readline from "node:readline";
 import { createTransport, mapError, sdk, ttlFromEnv } from "../client.js";
 import { loadConfig } from "../config.js";
-import { errors, serializeError } from "../errors.js";
-import { socketPath, pidPath, logPath, ensureDaemonDir } from "./paths.js";
+import { errors, serializeError, AgentCliError } from "../errors.js";
+import { socketPath, pidPath, ensureDaemonDir } from "./paths.js";
+import type { AgentCliConfig, ServerSpec, McpTool, DaemonStatusData, DaemonResponse } from "../types.js";
+import pkg from "../../package.json" with { type: "json" };
 
-const CLIENT_INFO = { name: "agentcli-daemon", version: "0.0.1" };
+const CLIENT_INFO = { name: "agentcli-daemon", version: pkg.version };
 const DEFAULT_IDLE_MS = 30 * 60 * 1000;
 
-function idleMsFromEnv() {
+function idleMsFromEnv(): number {
   const n = Number(process.env.AGENTCLI_DAEMON_IDLE_MS);
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_IDLE_MS;
 }
 
-class DaemonState {
-  constructor() {
-    // Persistent MCP clients keyed by server name.
-    this.clients = new Map(); // name -> {client, specJson}
-    // In-memory tools cache (direct mode keeps its own on-disk cache).
-    this.tools = new Map(); // name -> {tools, fetchedAt}
-    this.stats = { startedAt: Date.now(), requests: 0, toolCalls: 0 };
-    this.shuttingDown = false;
-    this.idleTimer = null;
-  }
+type McpClient = InstanceType<typeof import("@modelcontextprotocol/sdk/client/index.js").Client>;
 
-  freshConfig() {
+class DaemonState {
+  clients: Map<string, { client: McpClient; specJson: string }> = new Map();
+  tools: Map<string, { tools: McpTool[]; fetchedAt: number }> = new Map();
+  stats = { startedAt: Date.now(), requests: 0, toolCalls: 0 };
+  shuttingDown = false;
+  idleTimer: ReturnType<typeof setTimeout> | null = null;
+  server: net.Server | null = null;
+  onStopped: ((value: { alreadyRunning?: boolean; stopped?: boolean; reason?: string }) => void) | null = null;
+
+  freshConfig(): AgentCliConfig {
     return loadConfig();
   }
 
-  armIdleTimer() {
+  armIdleTimer(): void {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => {
       this.stop("idle timeout").catch(() => process.exit(0));
@@ -40,7 +41,7 @@ class DaemonState {
     this.idleTimer.unref();
   }
 
-  async getClient(serverName, spec) {
+  async getClient(serverName: string, spec: ServerSpec): Promise<McpClient> {
     const specJson = JSON.stringify(spec);
     const existing = this.clients.get(serverName);
     if (existing) {
@@ -53,12 +54,14 @@ class DaemonState {
         // ignore
       }
     }
-    let transport, Client, client;
+    let transport: unknown;
+    let Client: typeof import("@modelcontextprotocol/sdk/client/index.js").Client;
+    let client: McpClient;
     try {
       transport = await createTransport(spec);
       ({ Client } = await sdk());
       client = new Client(CLIENT_INFO);
-      await client.connect(transport);
+      await client.connect(transport as Parameters<typeof client.connect>[0]);
     } catch (e) {
       throw mapError(e, serverName);
     }
@@ -66,7 +69,7 @@ class DaemonState {
     return client;
   }
 
-  async listTools({ server, refresh }) {
+  async listTools({ server, refresh }: { server: string; refresh?: boolean }): Promise<{ tools: McpTool[]; cached: boolean }> {
     const cfg = this.freshConfig();
     const spec = cfg.servers[server];
     if (!spec) {
@@ -77,18 +80,18 @@ class DaemonState {
       return { tools: cached.tools, cached: true };
     }
     const client = await this.getClient(server, spec);
-    let res;
+    let res: { tools?: unknown[] };
     try {
       res = await client.listTools(undefined, { timeout: 30000 });
     } catch (e) {
       throw mapError(e, server);
     }
-    const tools = res.tools || [];
+    const tools = (res.tools as McpTool[]) || [];
     this.tools.set(server, { tools, fetchedAt: Date.now() });
     return { tools, cached: false };
   }
 
-  async callTool({ server, tool, args, timeoutMs }) {
+  async callTool({ server, tool, args, timeoutMs }: { server: string; tool: string; args?: Record<string, unknown>; timeoutMs?: number }): Promise<unknown> {
     const cfg = this.freshConfig();
     const spec = cfg.servers[server];
     if (!spec) {
@@ -103,7 +106,7 @@ class DaemonState {
     }
   }
 
-  status() {
+  status(): DaemonStatusData {
     return {
       pid: process.pid,
       startedAt: this.stats.startedAt,
@@ -115,7 +118,7 @@ class DaemonState {
     };
   }
 
-  async stop(reason = "shutdown") {
+  async stop(reason = "shutdown"): Promise<void> {
     if (this.shuttingDown) return;
     this.shuttingDown = true;
     if (this.idleTimer) clearTimeout(this.idleTimer);
@@ -147,8 +150,18 @@ class DaemonState {
   }
 }
 
-async function handleLine(state, sock, line) {
-  let req;
+interface DaemonRequest {
+  id: number | null;
+  op: string;
+  server?: string;
+  tool?: string;
+  args?: Record<string, unknown>;
+  refresh?: boolean;
+  timeoutMs?: number;
+}
+
+async function handleLine(state: DaemonState, sock: net.Socket, line: string): Promise<void> {
+  let req: DaemonRequest;
   try {
     req = JSON.parse(line);
   } catch {
@@ -158,7 +171,7 @@ async function handleLine(state, sock, line) {
   const { id, op } = req;
   try {
     state.stats.requests++;
-    let result;
+    let result: unknown;
     switch (op) {
       case "ping":
         result = { pong: true, pid: process.pid };
@@ -167,10 +180,10 @@ async function handleLine(state, sock, line) {
         result = state.status();
         break;
       case "listTools":
-        result = await state.listTools(req);
+        result = await state.listTools({ server: req.server!, refresh: req.refresh });
         break;
       case "callTool":
-        result = await withWatchdog(state.callTool(req), (req.timeoutMs ?? 60000) + 10000);
+        result = await withWatchdog(state.callTool({ server: req.server!, tool: req.tool!, args: req.args, timeoutMs: req.timeoutMs }), (req.timeoutMs ?? 60000) + 10000);
         break;
       case "shutdown":
         sock.write(JSON.stringify({ id, ok: true, result: { stopping: true } }) + "\n");
@@ -186,15 +199,15 @@ async function handleLine(state, sock, line) {
   state.armIdleTimer();
 }
 
-function withWatchdog(promise, ms) {
+function withWatchdog<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     promise,
-    new Promise((_, reject) => setTimeout(() => reject(errors.timeout("daemon operation timed out")), ms).unref()),
+    new Promise<T>((_, reject) => setTimeout(() => reject(errors.timeout("daemon operation timed out")), ms).unref()),
   ]);
 }
 
 // Public: boot the daemon in this process. Resolves when the daemon stops.
-export async function runDaemon() {
+export async function runDaemon(): Promise<{ alreadyRunning?: boolean; stopped?: boolean; reason?: string }> {
   ensureDaemonDir();
 
   // Already running? Exit quietly (the CLI layer reports the live daemon).
@@ -207,9 +220,9 @@ export async function runDaemon() {
   const state = new DaemonState();
   const server = net.createServer((sock) => {
     const rl = readline.createInterface({ input: sock });
-    rl.on("line", (line) => {
+    rl.on("line", (line: string) => {
       if (!line.trim()) return;
-      handleLine(state, sock, line).catch((e) => {
+      handleLine(state, sock, line).catch((e: unknown) => {
         // last-resort: never leave a request unanswered
         try {
           sock.write(JSON.stringify({ id: null, ok: false, error: serializeError(e) }) + "\n");
@@ -221,7 +234,7 @@ export async function runDaemon() {
     sock.on("error", () => {});
   });
 
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(socketPath(), resolve);
   });
@@ -240,18 +253,18 @@ export async function runDaemon() {
   return new Promise((resolve) => {
     state.onStopped = resolve;
     const wrapStop = state.stop.bind(state);
-    state.stop = async (reason) => {
+    state.stop = async (reason: string) => {
       await wrapStop(reason);
       resolve({ stopped: true, reason });
     };
   });
 }
 
-export async function pingSocket(timeoutMs = 1000) {
+export async function pingSocket(timeoutMs = 1000): Promise<boolean> {
   return new Promise((resolve) => {
     let buf = "";
     const sock = net.connect(socketPath());
-    const done = (r) => {
+    const done = (r: boolean) => {
       try {
         sock.destroy();
       } catch {
@@ -267,13 +280,13 @@ export async function pingSocket(timeoutMs = 1000) {
     sock.on("connect", () => {
       sock.write(JSON.stringify({ id: 0, op: "ping" }) + "\n");
     });
-    sock.on("data", (d) => {
+    sock.on("data", (d: Buffer) => {
       buf += d.toString();
       if (!buf.includes("\n")) return;
       clearTimeout(timer);
       try {
-        const msg = JSON.parse(buf.slice(0, buf.indexOf("\n")));
-        done(!!(msg && msg.ok && msg.result && msg.result.pong));
+        const msg = JSON.parse(buf.slice(0, buf.indexOf("\n"))) as DaemonResponse;
+        done(!!(msg && msg.ok && msg.result && (msg.result as { pong?: boolean }).pong));
       } catch {
         done(false);
       }

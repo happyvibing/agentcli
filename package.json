@@ -1,20 +1,23 @@
 {
   "name": "@happyvibing/agentcli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/happyvibing/agentcli.git"
   },
-  "description": "AgentCLI — call MCP servers from the command line. One CLI, any MCP server.",
+  "description": "AgentCLI \u2014 call MCP servers from the command line. One CLI, any MCP server.",
   "type": "module",
   "bin": {
     "agentcli": "bin/agentcli.js"
   },
   "files": [
     "bin",
-    "src",
+    "dist/src",
+    "dist/package.json",
     "skills",
-    "README.md"
+    "README.md",
+    "!dist/src/**/*.d.ts",
+    "!dist/src/**/*.map"
   ],
   "keywords": [
     "cli",
@@ -26,20 +29,27 @@
     "tool-runtime"
   ],
   "license": "MIT",
-  "author": "",
+  "author": "happyvibing",
   "publishConfig": {
     "access": "public"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.10"
   },
   "scripts": {
+    "clean": "rm -rf dist",
+    "build": "rm -rf dist && tsc",
     "start": "node bin/agentcli.js",
-    "prepublishOnly": "npm test",
-    "test": "node --test"
+    "test": "node --test dist/test/*.test.js",
+    "prepublishOnly": "rm -rf dist && tsc && node --test dist/test/*.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "commander": "^12.1.0"
-  }
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0"
+  },
+  "packageManager": "pnpm@10.28.0"
 }

@@ -1,6 +1,6 @@
 // Typo-tolerant matching used for "did you mean" suggestions (no deps).
 
-export function levenshtein(a, b) {
+export function levenshtein(a: string, b: string): number {
   const m = a.length;
   const n = b.length;
   if (Math.abs(m - n) > 3) return Infinity;
@@ -15,13 +15,13 @@ export function levenshtein(a, b) {
   return prev[n];
 }
 
-export function fuzzyMatch(typed, candidate) {
+export function fuzzyMatch(typed: string, candidate: string): boolean {
   if (candidate.includes(typed)) return true;
   return levenshtein(typed, candidate) <= Math.max(1, Math.floor(candidate.length / 3));
 }
 
 // Closest candidates for a typo'd name, best (lowest distance) first.
-export function suggest(typed, candidates) {
+export function suggest(typed: string, candidates: string[]): string[] {
   const lower = String(typed || "").toLowerCase();
   if (!lower) return [];
   return candidates
