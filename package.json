@@ -12,9 +12,12 @@
   },
   "files": [
     "bin",
-    "src",
+    "dist/src",
+    "dist/package.json",
     "skills",
-    "README.md"
+    "README.md",
+    "!dist/src/**/*.d.ts",
+    "!dist/src/**/*.map"
   ],
   "keywords": [
     "cli",
@@ -26,20 +29,28 @@
     "tool-runtime"
   ],
   "license": "MIT",
-  "author": "",
+  "author": "happyvibing",
   "publishConfig": {
     "access": "public"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.10"
   },
   "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
     "start": "node bin/agentcli.js",
-    "prepublishOnly": "npm test",
-    "test": "node --test"
+    "prebuild": "npm run clean",
+    "prepublishOnly": "npm run build && npm test",
+    "pretest": "npm run build",
+    "test": "node --test dist/test/*.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0"
   }
 }

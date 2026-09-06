@@ -3,13 +3,14 @@
 // --input accepts inline JSON, @file, or - (stdin). Flags override --input keys.
 import fs from "node:fs";
 import { errors } from "./errors.js";
+import type { ToolInputSchema, ToolPropertySchema, FlagPlan, FlagSpec, McpTool } from "./types.js";
 
 const CONTROL_FLAGS = new Set(["input", "output", "schema", "refresh", "help", "timeout-ms", "no-daemon"]);
 
-export function buildFlagPlan(inputSchema) {
+export function buildFlagPlan(inputSchema: ToolInputSchema | undefined): FlagPlan {
   const schema = inputSchema || {};
   const required = new Set(schema.required || []);
-  const plan = { flags: new Map(), complex: [], required: schema.required || [] };
+  const plan: FlagPlan = { flags: new Map(), complex: [], required: schema.required || [] };
   const props = schema.properties || {};
   for (const name of Object.keys(props)) {
     const ps = props[name] || {};
@@ -17,13 +18,16 @@ export function buildFlagPlan(inputSchema) {
       !ps.type ||
       ps.type === "object" ||
       (ps.type === "array" && (!ps.items || !ps.items.type || ps.items.type === "object")) ||
-      ps.anyOf || ps.oneOf || ps.allOf || ps.$ref;
+      ps.anyOf ||
+      ps.oneOf ||
+      ps.allOf ||
+      ps.$ref;
     if (complex) {
       plan.complex.push({ name, description: ps.description || "" });
     } else {
       plan.flags.set(name, {
         name,
-        type: ps.type,
+        type: ps.type as string,
         itemType: ps.type === "array" ? (ps.items && ps.items.type) || "string" : undefined,
         enum: ps.enum,
         default: ps.default,
@@ -35,7 +39,7 @@ export function buildFlagPlan(inputSchema) {
   return plan;
 }
 
-function coerceValue(spec, raw) {
+function coerceValue(spec: FlagSpec, raw: string): unknown {
   const type = spec.type === "array" ? spec.itemType : spec.type;
   if (type === "boolean") {
     if (raw === "true") return true;
@@ -55,17 +59,22 @@ function coerceValue(spec, raw) {
   return raw;
 }
 
+interface ParsedArgs {
+  args: Record<string, unknown>;
+  opts: Record<string, string | boolean>;
+}
+
 // tokens: everything after `agentcli <server> <tool>`
-export function parseToolArgs(plan, tokens) {
-  const args = {};
-  const opts = {};
+export function parseToolArgs(plan: FlagPlan, tokens: string[]): ParsedArgs {
+  const args: Record<string, unknown> = {};
+  const opts: Record<string, string | boolean> = {};
   for (let i = 0; i < tokens.length; i++) {
     const tok = tokens[i];
     if (!tok.startsWith("--")) {
       throw errors.invalidArgument('unexpected positional argument "' + tok + '"', "Pass values as flags, or the whole object via --input '<json>'");
     }
     let body = tok.slice(2);
-    let value;
+    let value: string | undefined;
     let hasValue = false;
     const eq = body.indexOf("=");
     if (eq >= 0) {
@@ -81,13 +90,13 @@ export function parseToolArgs(plan, tokens) {
           value = tokens[++i];
           if (value === undefined) throw errors.invalidArgument("--" + body + " requires a value");
         }
-        opts[body] = value;
+        opts[body] = value as string;
       }
       continue;
     }
     const spec = plan.flags.get(body);
     if (!spec) {
-      const hints = [];
+      const hints: string[] = [];
       const available = [...plan.flags.keys()].map((k) => "--" + k).join(", ");
       if (available) hints.push("Available flags: " + available);
       if (plan.complex.length) hints.push("Complex parameters (use --input): " + plan.complex.map((c) => c.name).join(", "));
@@ -111,9 +120,10 @@ export function parseToolArgs(plan, tokens) {
         throw errors.invalidArgument("--" + body + " requires a value", "Use --" + body + "=<value> when the value itself starts with --");
       }
     }
-    const parsed = coerceValue(spec, raw);
+    const parsed = coerceValue(spec, raw as string);
     if (spec.type === "array") {
-      (args[body] ||= []).push(parsed);
+      const arr = (args[body] as unknown[]) ||= [];
+      arr.push(parsed);
     } else {
       args[body] = parsed;
     }
@@ -121,39 +131,41 @@ export function parseToolArgs(plan, tokens) {
   return { args, opts };
 }
 
-export function readInputJson(spec) {
-  let rawText;
+export function readInputJson(spec: string): Record<string, unknown> {
+  let rawText: string;
   if (spec === "-") {
     rawText = fs.readFileSync(0, "utf8");
   } else if (spec.startsWith("@")) {
     try {
       rawText = fs.readFileSync(spec.slice(1), "utf8");
     } catch (e) {
-      throw errors.invalidArgument("cannot read --input file: " + spec.slice(1), e.message);
+      const err = e as Error;
+      throw errors.invalidArgument("cannot read --input file: " + spec.slice(1), err.message);
     }
   } else {
     rawText = spec;
   }
-  let value;
+  let value: unknown;
   try {
     value = JSON.parse(rawText);
   } catch (e) {
-    throw errors.invalidArgument("--input is not valid JSON", e.message);
+    const err = e as Error;
+    throw errors.invalidArgument("--input is not valid JSON", err.message);
   }
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw errors.invalidArgument("--input must be a JSON object");
   }
-  return value;
+  return value as Record<string, unknown>;
 }
 
-export function mergeArgs(base, overrides) {
+export function mergeArgs(base: Record<string, unknown> | undefined, overrides: Record<string, unknown> | undefined): Record<string, unknown> {
   return { ...(base || {}), ...(overrides || {}) };
 }
 
 // Required parameters must be present after flags + --input merge. A required
 // property with a schema default is left to the server. Throws INVALID_ARGUMENT.
-export function validateRequired(plan, args) {
-  const missing = [];
+export function validateRequired(plan: FlagPlan, args: Record<string, unknown>): void {
+  const missing: string[] = [];
   for (const name of plan.required || []) {
     if (args[name] !== undefined) continue;
     const spec = plan.flags.get(name);
@@ -168,9 +180,9 @@ export function validateRequired(plan, args) {
   );
 }
 
-export function renderToolHelp(serverName, tool) {
+export function renderToolHelp(serverName: string, tool: McpTool): string {
   const plan = buildFlagPlan(tool.inputSchema);
-  const lines = [];
+  const lines: string[] = [];
   lines.push(serverName + " " + tool.name);
   if (tool.description) lines.push("", tool.description);
   lines.push("", "Usage:", "  agentcli " + serverName + " " + tool.name + " [flags]");
@@ -184,7 +196,7 @@ export function renderToolHelp(serverName, tool) {
   if (opt.length || plan.complex.length) {
     lines.push("", "Optional:");
     for (const f of opt) {
-      const parts = [f.description];
+      const parts: string[] = [f.description];
       if (f.enum) parts.push("choices: " + f.enum.join("|"));
       if (f.default !== undefined) parts.push("default: " + JSON.stringify(f.default));
       const d = parts.filter(Boolean).join("; ");
@@ -201,7 +213,8 @@ export function renderToolHelp(serverName, tool) {
     "  --output <json|text>      Output format (default: json)",
     "  --schema                  Print the raw tool input schema",
     "  --refresh                 Bypass the cached tool list",
-    "  --timeout-ms <n>          Request timeout in milliseconds"
+    "  --timeout-ms <n>          Request timeout in milliseconds",
+    "  --no-daemon               Force direct mode (skip the daemon)"
   );
   return lines.join("\n");
 }

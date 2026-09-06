@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.join(__dirname, "..");
+const ROOT = path.join(__dirname, "..", "..");
 const SKILL = path.join(ROOT, "skills", "agentcli", "SKILL.md");
 
 test("skill file exists with valid frontmatter", () => {

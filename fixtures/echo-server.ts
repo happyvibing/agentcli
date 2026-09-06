@@ -52,13 +52,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 }));
 
 server.setRequestHandler(CallToolRequestSchema, async (req) => {
-  const a = req.params.arguments || {};
-  switch (req.params.name) {
+  const a = (req.params as { arguments?: Record<string, unknown> }).arguments || {};
+  switch ((req.params as { name: string }).name) {
     case "echo": {
-      let m = a.message;
+      let m = a.message as string;
       if (a.upper) m = m.toUpperCase();
       if (a.mode === "shout") m = m.toUpperCase() + "!!!";
-      const times = Math.max(1, a.times ?? 1);
+      const times = Math.max(1, (a.times as number) ?? 1);
       return { content: [{ type: "text", text: Array(times).fill(m).join(" ") }] };
     }
     case "complex":
@@ -66,14 +66,14 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     case "fail":
       return { isError: true, content: [{ type: "text", text: "boom: intentional failure" }] };
     case "slow":
-      await new Promise((r) => setTimeout(r, a.ms ?? 1000));
+      await new Promise<void>((r) => setTimeout(r, (a.ms as number) ?? 1000));
       return { content: [{ type: "text", text: "done" }] };
     case "double": {
-      const payload = [{ id: a.n ?? 1 }, { id: (a.n ?? 1) + 1 }];
+      const payload = [{ id: (a.n as number) ?? 1 }, { id: ((a.n as number) ?? 1) + 1 }];
       return { content: [{ type: "text", text: JSON.stringify(JSON.stringify(payload)) }] };
     }
     default:
-      return { isError: true, content: [{ type: "text", text: "unknown tool: " + req.params.name }] };
+      return { isError: true, content: [{ type: "text", text: "unknown tool: " + (req.params as { name: string }).name }] };
   }
 });
 

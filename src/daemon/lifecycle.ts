@@ -4,32 +4,43 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { errors } from "../errors.js";
+import { DaemonUnavailable } from "../client.js";
 import { socketPath, pidPath, logPath, ensureDaemonDir } from "./paths.js";
 import { runDaemon } from "./server.js";
 import { daemonRequest } from "../client.js";
+import type { DaemonStatusData } from "../types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-function requireUnix() {
+function requireUnix(): void {
   if (process.platform === "win32") {
     throw errors.invalidArgument("daemon mode requires unix sockets and is not supported on Windows yet", "calls still work without the daemon (direct mode)");
   }
 }
 
-async function isAlive() {
+async function isAlive(): Promise<boolean> {
   try {
-    const r = await daemonRequest("ping", {}, { timeoutMs: 1500 });
+    const r = (await daemonRequest("ping", {}, { timeoutMs: 1500 })) as { pong?: boolean };
     return !!(r && r.pong);
   } catch {
     return false;
   }
 }
 
+interface StartResult {
+  ok: boolean;
+  alreadyRunning?: boolean;
+  started?: boolean;
+  stopped?: boolean;
+  running?: boolean;
+  data?: DaemonStatusData | null;
+}
+
 // `agentcli daemon start --foreground` runs it inside this process (debugging);
 // default spawns a detached child that survives the CLI process.
-export async function startDaemon({ foreground = false } = {}) {
+export async function startDaemon({ foreground = false }: { foreground?: boolean } = {}): Promise<StartResult> {
   requireUnix();
   if (foreground) {
     const r = await runDaemon();
@@ -56,10 +67,10 @@ export async function startDaemon({ foreground = false } = {}) {
   throw errors.connect("daemon did not come up in time", { log: logPath() });
 }
 
-export async function stopDaemon() {
+export async function stopDaemon(): Promise<{ ok: boolean; stopped: boolean; running?: boolean; pid?: number }> {
   requireUnix();
   try {
-    const status = await daemonRequest("status", {}, { timeoutMs: 3000 });
+    const status = (await daemonRequest("status", {}, { timeoutMs: 3000 })) as DaemonStatusData | null;
     await daemonRequest("shutdown", {}, { timeoutMs: 5000 });
     // give the daemon a beat to unlink the socket
     for (let i = 0; i < 20; i++) {
@@ -68,27 +79,27 @@ export async function stopDaemon() {
     }
     return { ok: true, stopped: true, pid: status ? status.pid : undefined };
   } catch (e) {
-    if (e && e.unavailable) return { ok: true, stopped: false, running: false };
+    if (e instanceof DaemonUnavailable || (e as { unavailable?: boolean })?.unavailable) return { ok: true, stopped: false, running: false };
     throw e;
   }
 }
 
-async function statusPayload() {
+async function statusPayload(): Promise<{ running: boolean; data: DaemonStatusData | null }> {
   try {
-    const data = await daemonRequest("status", {}, { timeoutMs: 3000 });
+    const data = (await daemonRequest("status", {}, { timeoutMs: 3000 })) as DaemonStatusData;
     return { running: true, data };
   } catch (e) {
-    if (e && e.unavailable) return { running: false, data: null };
+    if (e instanceof DaemonUnavailable || (e as { unavailable?: boolean })?.unavailable) return { running: false, data: null };
     throw e;
   }
 }
 
-export async function daemonStatus() {
+export async function daemonStatus(): Promise<{ ok: boolean; running: boolean; data: DaemonStatusData | null }> {
   const payload = await statusPayload();
   return { ok: true, ...payload };
 }
 
-export async function readDaemonPid() {
+export async function readDaemonPid(): Promise<number | null> {
   try {
     return Number(fs.readFileSync(pidPath(), "utf8").trim());
   } catch {
