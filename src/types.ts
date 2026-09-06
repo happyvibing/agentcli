@@ -1,4 +1,6 @@
 // Shared types used across the codebase.
+// ToolDef is the unified internal tool contract: every backend (MCP, OpenAPI,
+// future ones) produces these; dispatch/flags consume them backend-agnostically.
 
 export interface StdioServerSpec {
   type: "stdio";
@@ -13,7 +15,15 @@ export interface HttpServerSpec {
   headers?: Record<string, string> | string[];
 }
 
-export type ServerSpec = StdioServerSpec | HttpServerSpec;
+export interface OpenApiServerSpec {
+  type: "openapi";
+  spec: string; // absolute path to the local snapshot
+  origin: string; // original source: URL or absolute file path (--refresh re-pulls)
+  baseUrl?: string; // overrides spec.servers[0].url
+  headers?: Record<string, string>; // may contain ${ENV_VAR} placeholders
+}
+
+export type ServerSpec = StdioServerSpec | HttpServerSpec | OpenApiServerSpec;
 
 export interface AgentCliConfig {
   version: 1;
@@ -40,11 +50,29 @@ export interface ToolPropertySchema {
   [key: string]: unknown;
 }
 
-export interface McpTool {
+// The unified tool definition (formerly McpTool). MCP tool listings map 1:1;
+// the OpenAPI compiler emits these from spec operations.
+export interface ToolDef {
   name: string;
   description?: string;
   inputSchema?: ToolInputSchema;
+  tags?: string[];
+  // OpenAPI backend only: execution metadata (method/path/param locations).
+  openapiMeta?: OpenApiOperationMeta;
   [key: string]: unknown;
+}
+
+// Execution metadata embedded in ToolDef by the OpenAPI compiler and consumed
+// by the OpenAPI executor. All maps are flagName -> original spec name.
+export interface OpenApiOperationMeta {
+  method: string; // uppercase HTTP method
+  path: string; // path template, e.g. /pets/{petId}
+  baseUrl: string; // resolved base URL (override or spec.servers[0])
+  pathParams: Record<string, string>;
+  queryParams: Record<string, string>;
+  headerParams: Record<string, string>;
+  bodyProps: Record<string, string>; // flagName -> body property name
+  rawBody?: string; // flagName holding the whole request body (non-object body schemas)
 }
 
 export interface FlagSpec {
@@ -69,7 +97,7 @@ export interface FlagPlan {
 }
 
 export interface ToolsCache {
-  tools: McpTool[];
+  tools: ToolDef[];
   fetchedAt: number;
 }
 
@@ -93,17 +121,6 @@ export interface DaemonResponse {
     hint?: string;
     details?: unknown;
   };
-}
-
-export interface CallToolResultEnvelope {
-  result: unknown;
-  via: "daemon" | "direct";
-}
-
-export interface ListToolsResultEnvelope {
-  tools: McpTool[];
-  cached: boolean;
-  via: "daemon" | "direct";
 }
 
 export interface DaemonStatusData {

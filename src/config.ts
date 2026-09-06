@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { errors } from "./errors.js";
-import type { AgentCliConfig, ServerSpec, McpTool, ToolsCache } from "./types.js";
+import type { AgentCliConfig, ServerSpec, ToolDef, ToolsCache } from "./types.js";
 
 export const RESERVED_NAMES = new Set(["server", "call", "help", "version", "config", "doctor", "completion", "daemon"]);
 
@@ -66,9 +66,10 @@ export function removeServer(cfg: AgentCliConfig, name: string): void {
   delete cfg.servers[name];
   saveConfig(cfg);
 
-  // Clean up the stale tools cache file for the removed server.
+  // Clean up the stale tools cache and openapi spec snapshot for the removed server.
   try {
     fs.rmSync(path.join(cacheDir(), name + ".tools.json"), { force: true });
+    fs.rmSync(path.join(path.dirname(configPath()), "specs", name + ".json"), { force: true });
   } catch {
     // ignore
   }
@@ -80,7 +81,7 @@ function cacheFile(server: string): string {
   return path.join(cacheDir(), server + ".tools.json");
 }
 
-export function readToolsCache(server: string, ttlMs: number): { tools: McpTool[]; fresh: boolean } | null {
+export function readToolsCache(server: string, ttlMs: number): { tools: ToolDef[]; fresh: boolean } | null {
   let raw: ToolsCache;
   try {
     raw = JSON.parse(fs.readFileSync(cacheFile(server), "utf8"));
@@ -91,7 +92,7 @@ export function readToolsCache(server: string, ttlMs: number): { tools: McpTool[
   return { tools: raw.tools, fresh: Date.now() - raw.fetchedAt < ttlMs };
 }
 
-export function writeToolsCache(server: string, tools: McpTool[]): void {
+export function writeToolsCache(server: string, tools: ToolDef[]): void {
   fs.mkdirSync(cacheDir(), { recursive: true });
   fs.writeFileSync(cacheFile(server), JSON.stringify({ fetchedAt: Date.now(), tools }, null, 2));
 }

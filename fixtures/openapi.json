@@ -1,0 +1,103 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "MiniAPI", "version": "1.0.0", "description": "Test fixture spec" },
+  "servers": [{ "url": "https://api.mini.test/v1" }],
+  "tags": [{ "name": "pets" }, { "name": "store" }],
+  "paths": {
+    "/pets/{petId}": {
+      "get": {
+        "tags": ["pets"],
+        "summary": "Get a pet by id",
+        "operationId": "getPetById",
+        "parameters": [
+          { "name": "petId", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "verbose", "in": "query", "schema": { "type": "boolean" } },
+          { "$ref": "#/components/parameters/Limit" }
+        ],
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/pets": {
+      "get": {
+        "tags": ["pets"],
+        "summary": "List pets",
+        "operationId": "listPets",
+        "parameters": [
+          { "name": "tags", "in": "query", "schema": { "type": "array", "items": { "type": "string" } } },
+          { "$ref": "#/components/parameters/Limit" }
+        ],
+        "responses": { "200": { "description": "ok" } }
+      },
+      "post": {
+        "tags": ["pets"],
+        "summary": "Create a pet",
+        "operationId": "addPet",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Pet" } } }
+        },
+        "responses": { "201": { "description": "created" } }
+      }
+    },
+    "/store/order": {
+      "get": {
+        "tags": ["store"],
+        "summary": "Get an order",
+        "operationId": "getOrder",
+        "parameters": [{ "name": "X-Request-Id", "in": "header", "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/no-op-id": {
+      "get": {
+        "summary": "Operation without operationId",
+        "parameters": [{ "name": "q", "in": "query", "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/circular": {
+      "post": {
+        "summary": "Circular ref body",
+        "operationId": "postCircular",
+        "requestBody": {
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Node" } } }
+        },
+        "responses": { "200": { "description": "ok" } }
+      }
+    },
+    "/batch": {
+      "post": {
+        "summary": "Array body",
+        "operationId": "postBatch",
+        "requestBody": {
+          "content": { "application/json": { "schema": { "type": "array", "items": { "type": "string" } } } }
+        },
+        "responses": { "200": { "description": "ok" } }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "Limit": { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 10 }, "description": "Page size" }
+    },
+    "schemas": {
+      "Pet": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "description": "Pet name" },
+          "tag": { "type": "string" },
+          "kind": { "$ref": "#/components/schemas/Kind" }
+        }
+      },
+      "Kind": { "type": "string", "enum": ["cat", "dog"] },
+      "Node": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "children": { "type": "array", "items": { "$ref": "#/components/schemas/Node" } }
+        }
+      }
+    }
+  }
+}

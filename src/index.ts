@@ -1,13 +1,16 @@
 import { Command } from "commander";
+import path from "node:path";
 import pkg from "../package.json" with { type: "json" };
-import { loadConfig, addServer, removeServer } from "./config.js";
+import { loadConfig, addServer, removeServer, writeToolsCache } from "./config.js";
 import { AgentCliError, errors, EXIT } from "./errors.js";
 import { printError, printJson } from "./jsonout.js";
 import { runServerCommand } from "./dispatch.js";
-import { listTools } from "./client.js";
+import { openBackend } from "./backend/index.js";
+import { snapshotSpec, snapshotPath } from "./openapi/specstore.js";
+import { compileSpec } from "./openapi/compile.js";
 import { startDaemon, stopDaemon, daemonStatus } from "./daemon/lifecycle.js";
 import { suggest } from "./fuzzy.js";
-import type { AgentCliConfig, ServerSpec, StdioServerSpec, HttpServerSpec } from "./types.js";
+import type { AgentCliConfig, ServerSpec, StdioServerSpec, HttpServerSpec, OpenApiServerSpec } from "./types.js";
 
 const { version } = pkg;
 
@@ -79,14 +82,16 @@ function serversHelpSection(cfg: AgentCliConfig): string {
     return [
       "",
       "No servers configured yet:",
-      "  agentcli server add <name> -- <command...> [args...]   # stdio server",
-      "  agentcli server add <name> --url <http-url>            # Streamable HTTP server",
+      "  agentcli server add <name> -- <command...> [args...]   # stdio MCP server",
+      "  agentcli server add <name> --url <http-url>            # Streamable HTTP MCP server",
+      "  agentcli server add <name> --openapi <spec.json|url>   # OpenAPI 3.x API",
       "",
     ].join("\n");
   }
   const lines = entries.map(([name, spec]: [string, ServerSpec]) => {
-    const detail = spec.type === "http" ? spec.url : [spec.command, ...(spec.args || [])].join(" ");
-    return "  " + name.padEnd(16) + (spec.type === "http" ? "http - " : "stdio - ") + detail;
+    const kind = spec.type === "http" ? "http" : spec.type === "openapi" ? "openapi" : "stdio";
+    const detail = spec.type === "http" ? spec.url : spec.type === "openapi" ? spec.origin : [spec.command, ...(spec.args || [])].join(" ");
+    return "  " + name.padEnd(16) + kind + " - " + detail;
   });
   return [
     "",
@@ -102,13 +107,13 @@ function buildBuiltins(cfg: AgentCliConfig): Command {
   program
     .name("agentcli")
     .version(version)
-    .description("AgentCLI -- call MCP servers from the command line.")
+    .description("AgentCLI -- call MCP servers and OpenAPI APIs from the command line.")
     .exitOverride()
     .configureOutput({ writeErr: () => {} });
 
   program.addHelpText("after", serversHelpSection(cfg));
 
-  const server = program.command("server").description("Manage configured MCP servers.");
+  const server = program.command("server").description("Manage configured servers (MCP or OpenAPI).");
   server.addHelpText(
     "after",
     "\nConfigured servers: " + (Object.keys(cfg.servers).join(", ") || "none") + "\n  agentcli server list    Details as JSON\n"
@@ -116,13 +121,35 @@ function buildBuiltins(cfg: AgentCliConfig): Command {
 
   server
     .command("add <name>")
-    .description("Register a server: stdio via `-- <command...>`, or Streamable HTTP via --url.")
+    .description("Register a server: stdio via `-- <command...>`, HTTP via --url, or an OpenAPI 3.x spec via --openapi.")
     .option("--url <url>", "Streamable HTTP endpoint of the MCP server")
-    .option("--header <name:value...>", "HTTP header sent on every request (repeatable)")
+    .option("--openapi <spec>", "OpenAPI 3.x JSON spec (local path or URL) — every operation becomes a tool")
+    .option("--base-url <url>", "Override the API base URL (with --openapi)")
+    .option("--header <name:value...>", "HTTP header sent on every request (repeatable; ${ENV_VAR} placeholders expand at call time)")
     .option("--env <key=value...>", "Extra env vars for a stdio server (repeatable)")
     .argument("[cmd...]", "stdio server command and args (after --)")
-    .action(async (name: string, cmd: string[], opts: { url?: string; header?: string[]; env?: string[] }) => {
+    .action(async (name: string, cmd: string[], opts: { url?: string; openapi?: string; baseUrl?: string; header?: string[]; env?: string[] }) => {
       const current = loadConfig();
+      if (opts.openapi) {
+        if (opts.url) throw errors.invalidArgument("--openapi and --url are mutually exclusive");
+        if (cmd && cmd.length) throw errors.invalidArgument("--openapi and a command are mutually exclusive");
+        // fail fast: snapshot + compile at add time so bad specs never register
+        const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(opts.openapi);
+        const origin = hasScheme ? opts.openapi : path.resolve(opts.openapi);
+        const doc = await snapshotSpec(name, origin);
+        const tools = compileSpec(doc, { baseUrl: opts.baseUrl, originUrl: hasScheme ? origin : undefined });
+        const spec: OpenApiServerSpec = {
+          type: "openapi",
+          spec: snapshotPath(name),
+          origin,
+          ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
+          headers: parseKeyValueList(opts.header, "header", '"Name: value"', ":"),
+        };
+        addServer(current, name, spec);
+        writeToolsCache(name, tools);
+        printJson({ ok: true, server: name, operations: tools.length, config: process.env.AGENTCLI_CONFIG });
+        return;
+      }
       if (opts.url) {
         if (cmd && cmd.length) throw errors.invalidArgument("--url and a command are mutually exclusive");
         const spec: HttpServerSpec = { type: "http", url: opts.url, headers: parseKeyValueList(opts.header, "header", '"Name: value"', ":") };
@@ -131,7 +158,7 @@ function buildBuiltins(cfg: AgentCliConfig): Command {
         if (!cmd || cmd.length === 0) {
           throw errors.invalidArgument(
             "a stdio server needs a command",
-            "agentcli server add <name> -- <command...> [args...]   |   agentcli server add <name> --url <http-url>"
+            "agentcli server add <name> -- <command...> [args...]   |   agentcli server add <name> --url <http-url>   |   agentcli server add <name> --openapi <spec>"
           );
         }
         const [command, ...args] = cmd;
@@ -147,12 +174,13 @@ function buildBuiltins(cfg: AgentCliConfig): Command {
     .option("-o, --output <fmt>", "json | text (default: json)")
     .action((opts: { output?: string }) => {
       const current = loadConfig();
-      const rows: Array<{ name: string; type: string; command?: string; url?: string }> = Object.entries(current.servers).map(([name, spec]: [string, ServerSpec]) => {
+      const rows: Array<{ name: string; type: string; command?: string; url?: string; origin?: string }> = Object.entries(current.servers).map(([name, spec]: [string, ServerSpec]) => {
         if (spec.type === "http") return { name, type: spec.type, url: spec.url };
+        if (spec.type === "openapi") return { name, type: spec.type, origin: spec.origin };
         return { name, type: spec.type, command: [spec.command, ...(spec.args || [])].join(" ") };
       });
       if (opts.output === "text") {
-        for (const r of rows) console.log(r.name.padEnd(16) + r.type.padEnd(8) + (r.command || r.url || ""));
+        for (const r of rows) console.log(r.name.padEnd(16) + r.type.padEnd(8) + (r.command || r.url || r.origin || ""));
         return;
       }
       printJson({ ok: true, data: rows });
@@ -169,10 +197,10 @@ function buildBuiltins(cfg: AgentCliConfig): Command {
   server
     .command("tools <name>")
     .description("List the tools a server exposes.")
-    .option("--refresh", "Bypass the tools cache")
+    .option("--refresh", "Bypass the tools cache (OpenAPI: also re-pull the spec from its origin)")
     .option("-o, --output <fmt>", "json | text (default: json)")
     .action(async (name: string, opts: { refresh?: boolean; output?: string }) => {
-      const { tools } = await listTools(loadConfig(), name, { refresh: !!opts.refresh });
+      const { tools } = await openBackend(loadConfig(), name).listTools({ refresh: !!opts.refresh });
       if (opts.output === "text") {
         for (const t of tools) console.log(String(t.name).padEnd(28) + String(t.description || "").split("\n")[0]);
         return;

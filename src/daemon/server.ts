@@ -7,7 +7,7 @@ import { createTransport, mapError, sdk, ttlFromEnv } from "../client.js";
 import { loadConfig } from "../config.js";
 import { errors, serializeError, AgentCliError } from "../errors.js";
 import { socketPath, pidPath, ensureDaemonDir } from "./paths.js";
-import type { AgentCliConfig, ServerSpec, McpTool, DaemonStatusData, DaemonResponse } from "../types.js";
+import type { AgentCliConfig, ServerSpec, ToolDef, DaemonStatusData, DaemonResponse } from "../types.js";
 import pkg from "../../package.json" with { type: "json" };
 
 const CLIENT_INFO = { name: "agentcli-daemon", version: pkg.version };
@@ -22,7 +22,7 @@ type McpClient = InstanceType<typeof import("@modelcontextprotocol/sdk/client/in
 
 class DaemonState {
   clients: Map<string, { client: McpClient; specJson: string }> = new Map();
-  tools: Map<string, { tools: McpTool[]; fetchedAt: number }> = new Map();
+  tools: Map<string, { tools: ToolDef[]; fetchedAt: number }> = new Map();
   stats = { startedAt: Date.now(), requests: 0, toolCalls: 0 };
   shuttingDown = false;
   idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -69,7 +69,7 @@ class DaemonState {
     return client;
   }
 
-  async listTools({ server, refresh }: { server: string; refresh?: boolean }): Promise<{ tools: McpTool[]; cached: boolean }> {
+  async listTools({ server, refresh }: { server: string; refresh?: boolean }): Promise<{ tools: ToolDef[]; cached: boolean }> {
     const cfg = this.freshConfig();
     const spec = cfg.servers[server];
     if (!spec) {
@@ -86,7 +86,7 @@ class DaemonState {
     } catch (e) {
       throw mapError(e, server);
     }
-    const tools = (res.tools as McpTool[]) || [];
+    const tools = (res.tools as ToolDef[]) || [];
     this.tools.set(server, { tools, fetchedAt: Date.now() });
     return { tools, cached: false };
   }
