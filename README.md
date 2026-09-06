@@ -99,7 +99,7 @@ How an OpenAPI spec maps onto the CLI:
 - HTTP failures map to the same error codes: 401/403 → `AUTH_REQUIRED`, 404 → `NOT_FOUND`, other 4xx/5xx → `EXECUTION_ERROR` with `httpStatus` in details
 - OpenAPI calls are stateless HTTP — `meta.via` is always `direct` (no daemon involved)
 
-Swagger 2.0 and YAML specs are rejected with an upgrade/conversion hint. Local spec files work too (`--openapi ./api.json`) — useful for internal APIs.
+Swagger 2.0 and YAML specs are rejected with an upgrade/conversion hint. Local spec files work too (`--openapi ./api.json`) — useful for internal APIs. See [`examples/`](examples/) for a 30-second walkthrough against a real, auth-free API.
 
 ## Architecture
 
