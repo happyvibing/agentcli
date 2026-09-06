@@ -24,7 +24,7 @@ MCP 后端从协议里拿工具列表;OpenAPI 后端把 spec 编译成工具列�
 | 锚点 | 含义 |
 |---|---|
 | ToolDef | 同一种工具定义 (JSON Schema inputSchema) → 同一个 flag 编译器 (`flags.ts` 不动) |
-| Result envelope | callTool 返回同一种 MCP 形状结果 → 同一个 `extractData` / 输出路径 |
+| ToolResult | callTool 返回同一种**中立内部结果** `{data, text?, isError?}` — MCP 形状在 McpBackend 边界内一次转换,内部总线不耦合任何协议 |
 | Cache | 同一个 `<name>.tools.json` TTL/refresh 语义 |
 | Errors | 同一张错误码表 → 同一套 exit code 协议 |
 
@@ -58,22 +58,22 @@ export function openBackend(cfg: AgentCliConfig, name: string): Backend;
 // 按 cfg.servers[name].type 分发: "mcp 类" (stdio/http) → McpBackend, "openapi" → OpenApiBackend
 ```
 
-- `McpBackend`: 薄封装现有 `client.ts` 的 `listTools/callTool`,逻辑一行不改。
+- `McpBackend`: 封装现有 `client.ts` 的 `listTools/callTool`,并在边界内把 MCP 形状结果转换为中立的 `ToolResult` (现 dispatch.ts 里的 `extractData`/`extractText`/`parseMaybeEncoded` 迁入此处 — 那本就是 MCP 特有的解析逻辑)。
 - `OpenApiBackend`: 新增。忽略 `daemon` 选项 (无状态 HTTP,无持久连接需求),`via` 恒为 `"direct"`。
 - **改造点**: `dispatch.ts` 与 `index.ts` 的 `server tools` 改调 `openBackend(...)`;`client.ts` 保持 MCP 专用。
 - `ToolDef` = 现有 `McpTool` 更名 (纯重命名,字段不变,新增可选 `tags?: string[]` 供 help 分组)。
 
-OpenAPI 的 callTool 返回值伪装成 MCP 形状 — 这是"统一"的实惠:
+内部结果类型与两个后端各自的转换 (MCP 形状**不越过** backend 边界):
 
 ```ts
-{
-  content: [{ type: "text", text: rawBody }],
-  structuredContent: parsedJson ?? undefined,
-  isError: status >= 400
-}
+// src/backend/types.ts — 内部中立契约
+export interface ToolResult { data: unknown; text?: string; isError?: boolean; }
+// McpBackend 转换: structuredContent → data;纯文本 content → parseMaybeEncoded(text) → data, text=原文
+// OpenApiBackend 转换: JSON body → data;原文 → text;status≥400 已在后端抛映射后的 AgentCliError
+```
 ```
 
-dispatch 的 `extractData` / `extractText` / `--output text` 全部直接工作。
+dispatch 消费 `{data, text, isError}`:`--output json` 打印 data;`--output text` = data 为对象则 pretty-print,否则用 text;isError → `EXECUTION_ERROR`。错误处理统一为**后端抛类型化 AgentCliError**(连接/超时/认证/openapi 的 HTTP 状态码映射),dispatch 只透传 — exit code 协议不变。
 
 ## 3. 配置层
 
@@ -206,12 +206,12 @@ callTool(tool, args) →
 ```
 src/backend/types.ts        新  Backend 接口 + ToolDef (自 types.ts 迁移更名)
 src/backend/index.ts        新  openBackend(cfg, name) 工厂
-src/backend/mcp.ts          新  薄封装 client.ts (零逻辑)
+src/backend/mcp.ts          新  封装 client.ts + MCP→ToolResult 转换 (extractData 自 dispatch.ts 迁入)
 src/openapi/specstore.ts    新  快照下载/复制/回源刷新 (fetch + fs, 0600)
 src/openapi/ref.ts          新  $ref 内联解析 (循环/深度保护)
 src/openapi/compile.ts      新  spec → ToolDef[] + operation 元数据
 src/openapi/exec.ts         新  args → HTTP 请求 → envelope + 错误映射
-src/dispatch.ts             改  listTools/callTool → openBackend(...)  (≈5 行)
+src/dispatch.ts             改  改调 openBackend(...);MCP 解析函数迁出 (净减代码)
 src/index.ts                改  server add --openapi/--base-url;server tools 走 backend
 src/types.ts                改  +OpenApiServerSpec;McpTool → ToolDef (tags?)
 src/config.ts               改  removeServer 清快照
@@ -240,9 +240,10 @@ src/flags.ts / jsonout / errors / fuzzy / daemon/*  不动
 | # | 决策 | 备选与理由 |
 |---|---|---|
 | 1 | 统一点放在 Backend 接口而非"编译期生成 CLI 代码" | 动态运行时与现有 MCP 路径同构;不引入代码生成、构建步骤 |
-| 2 | callTool 返回 MCP 形状 envelope | dispatch/输出层零改动;代价是 openapi 侧一次包装,可控 |
+| 2 | 内部契约 = ToolDef (入) + ToolResult (出),中立类型;后端抛类型化错误 | 备选"openapi 结果伪装成 MCP envelope"被否 — 内部格式被单一协议绑架;备选"openapi→MCP server 桥"被否 — 多一跳进程、协议协商开销、错误映射失控 |
 | 3 | add 时快照落盘 | 离线可用、可审计、spec 变更不破坏已注册 CLI;live 模式 (每次调用回源拉 spec) 被否 — 慢且不稳 |
 | 4 | body 属性打平为顶层 flags | agent 体验优先 (不用每次 --input);冲突用 `body_` 前缀消解而非报错 |
 | 5 | operationId 缺失兜底为机械 slug | 语义化改名 (如 list_issues) 需要启发式,不可预测;机械规则 agent 可推理 |
 | 6 | daemon 不服务 openapi | 无状态 HTTP 无持久连接收益;少一条守护进程职责,复杂度换不来性能 |
 | 7 | 零新增依赖 | fetch 内建;$ref 自写解析器 (<100 行) 比引入 api-ref-parser 轻 10 倍 |
+| 8 | 统一发生在 **Tool 层**,不是 MCP 层 | OpenAPI spec → ToolDef 直达,不经 MCP 协议;MCP 只是"另一个生产 ToolDef 的后端"。反向桥接 (ToolDef→MCP) 是 P3 可选衍生品 |
