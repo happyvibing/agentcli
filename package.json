@@ -5,7 +5,7 @@
     "type": "git",
     "url": "git+ssh://git@github.com/happyvibing/agentcli.git"
   },
-  "description": "AgentCLI — call MCP servers from the command line. One CLI, any MCP server.",
+  "description": "AgentCLI \u2014 call MCP servers from the command line. One CLI, any MCP server.",
   "type": "module",
   "bin": {
     "agentcli": "bin/agentcli.js"
@@ -37,13 +37,11 @@
     "node": ">=20.10"
   },
   "scripts": {
-    "build": "tsc",
     "clean": "rm -rf dist",
+    "build": "rm -rf dist && tsc",
     "start": "node bin/agentcli.js",
-    "prebuild": "npm run clean",
-    "prepublishOnly": "npm run build && npm test",
-    "pretest": "npm run build",
-    "test": "node --test dist/test/*.test.js"
+    "test": "node --test dist/test/*.test.js",
+    "prepublishOnly": "rm -rf dist && tsc && node --test dist/test/*.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
@@ -52,5 +50,6 @@
   "devDependencies": {
     "typescript": "^5.7.0",
     "@types/node": "^22.0.0"
-  }
+  },
+  "packageManager": "pnpm@10.28.0"
 }

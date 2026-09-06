@@ -15,20 +15,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        # version is taken from the packageManager field in package.json
       - name: Use Node.js 22
         uses: actions/setup-node@v5
         with:
           node-version: 22
-          cache: 'npm'
+          cache: 'pnpm'
           registry-url: 'https://registry.npmjs.org'
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Build
-        run: npm run build
+        run: pnpm build
       - name: Run tests
-        run: npm test
+        run: pnpm test
       - name: Publish to npm
-        # prepublishOnly re-runs build + test as a final gate inside publish.
+        # npm (not pnpm) publish: pnpm's packer does not honor the "!"
+        # negation patterns in the files field, which keeps .d.ts and
+        # source maps out of the tarball. prepublishOnly re-runs clean,
+        # build, and tests as a final gate inside publish.
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
